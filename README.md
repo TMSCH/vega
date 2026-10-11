@@ -282,6 +282,9 @@ Vega looks for its config in this order:
 
 ## Security notes
 
+- **Refusals only when addressed.** Someone off the allowlist is refused only
+  when they DM Vega or @mention it. Their ordinary replies in a thread Vega is
+  part of are dropped silently, so a shared thread stays quiet.
 - **Fails closed.** If the access check raises, for example because
   `vega.toml` is malformed, the message is dropped. If relaying raises, the
   person is told nothing was passed on.
