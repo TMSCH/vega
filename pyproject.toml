@@ -1,0 +1,26 @@
+[project]
+name = "vega"
+version = "0.1.0"
+description = "Hermes agent that fronts fleet's Mission Control on Slack"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+vega = "vega.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9.1,<10", "ruff==0.15.10"]
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+# The plugin directory is the package: Hermes loads it as a plugin from Vega's
+# profile, and the same code backs the `vega` command.
+[tool.hatch.build.targets.wheel]
+packages = ["plugins/vega"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

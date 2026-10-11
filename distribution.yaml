@@ -1,0 +1,25 @@
+name: vega
+version: 0.1.0
+description: "Slack front door to fleet's Mission Control: relays teammates' requests to the lead session and answers status questions read-only."
+hermes_requires: ">=0.21.0"
+
+# Exactly what `hermes profile install` copies into the profile. The repo also
+# holds the `vega` command's packaging, tests and docs, which stay out.
+distribution_owned:
+  - distribution.yaml
+  - SOUL.md
+  - config.yaml
+  - skills
+  - plugins/vega
+
+env_requires:
+  - name: SLACK_BOT_TOKEN
+    description: "Vega's Slack bot token (xoxb-…), from OAuth & Permissions after installing the app"
+    required: true
+  - name: SLACK_APP_TOKEN
+    description: "Vega's Slack app-level token (xapp-…) with connections:write, for Socket Mode"
+    required: true
+  - name: SLACK_ALLOW_ALL_USERS
+    description: "Must be true: Vega's own allowlist (vega.toml) gates and politely refuses senders"
+    required: true
+    default: "true"

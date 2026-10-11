@@ -1,0 +1,47 @@
+# Slack app manifest for Vega. Create the app from it at
+# https://api.slack.com/apps -> Create New App -> From a manifest.
+#
+# Socket Mode: Vega opens an outbound WebSocket, so no request URL and no inbound
+# port. The scopes are Hermes' required Slack set minus file access (Vega never
+# reads or uploads files) and the assistant/slash-command extras: read what is
+# addressed to Vega in DMs and channels, post in threads, resolve display names.
+display_information:
+  name: Vega
+  description: Front door to the fleet's Mission Control
+  background_color: "#1d2b3a"
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Vega
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read   # @Vega in channels
+      - channels:history    # thread replies in public channels Vega is in
+      - channels:read       # channel info Hermes' Slack adapter looks up
+      - groups:history      # same, private channels
+      - groups:read
+      - im:history          # DMs to Vega
+      - im:read
+      - im:write            # Hermes opens the DM it replies in
+      - mpim:history        # group DMs that include Vega
+      - mpim:read
+      - chat:write          # replies, refusals and Mission Control's answers
+      - users:read          # sender display names for the relay prefix
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
