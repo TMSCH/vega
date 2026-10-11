@@ -16,8 +16,10 @@ platform_toolsets:
   cli: [vega]
 
 slack:
-  # Channels: answer only when @mentioned; replies in an existing thread need none.
+  # Channels: answer only when @mentioned, including inside a thread Vega already
+  # replied in, so teammates talking in that thread are not each refused.
   require_mention: true
+  thread_require_mention: true
   # Vega's plugin refuses strangers itself (SLACK_ALLOW_ALL_USERS=true in .env lets
   # them reach it); Hermes' own pairing flow stays off.
   unauthorized_dm_behavior: ignore
