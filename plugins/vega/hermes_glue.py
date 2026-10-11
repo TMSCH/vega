@@ -71,7 +71,11 @@ async def pre_gateway_dispatch(event: Any = None, gateway: Any = None, **_: Any)
         logger.info(
             "vega: refusing %s in %s (%s)", msg.user_id, msg.channel_id, gate.detail
         )
-        if _refusal_due(msg.user_id) and not getattr(source, "is_bot", False):
+        if (
+            _addressed_to_vega(event, msg)
+            and not getattr(source, "is_bot", False)
+            and _refusal_due(msg.user_id)
+        ):
             await _send(gateway, source, msg, cfg.refusal)
         return {"action": "skip", "reason": f"vega: {gate.detail}"}
     except Exception:
@@ -105,6 +109,13 @@ async def post_gateway_admission(
         return None
     logger.info("vega: %s - %s", outcome.kind, outcome.detail)
     return {"action": "handled", "reply": outcome.reply}
+
+
+def _addressed_to_vega(event: Any, msg: InboundMessage) -> bool:
+    """A DM or an @Vega. A plain reply in a thread Vega is part of reaches the
+    gateway too (``reply_expected`` is unset), but is chatter among teammates, and
+    someone off the allowlist is ignored there rather than told off."""
+    return msg.is_dm or getattr(event, "reply_expected", None) is True
 
 
 def _hold_context(channel_id: str, message_ts: str, event: Any) -> None:

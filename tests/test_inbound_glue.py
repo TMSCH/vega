@@ -86,6 +86,7 @@ class Event:
     source: Source
     text: str
     channel_context: str | None = None
+    reply_expected: bool | None = True
 
 
 @dataclass
@@ -126,6 +127,20 @@ def test_pre_dispatch_refuses_stranger_once_then_quietly(wired, cfg):
     assert dispatch(event, gw)["action"] == "skip"
     assert gw.adapter.sent == [(CHANNEL, cfg.refusal, {"thread_id": TS})]
     assert wired.calls == []
+
+
+def test_stranger_chatting_in_a_thread_is_dropped_silently(wired):
+    gw = Gateway()
+    event = Event(Source(source(user=OTHER_USER)), "lunch?", reply_expected=None)
+    assert dispatch(event, gw)["action"] == "skip"
+    assert gw.adapter.sent == []
+    dm = Event(
+        Source(source(user=OTHER_USER, chat=DM, chat_type="dm")),
+        "hi",
+        reply_expected=None,
+    )
+    assert dispatch(dm, gw)["action"] == "skip"
+    assert len(gw.adapter.sent) == 1
 
 
 def test_pre_dispatch_refuses_allowlisted_user_in_other_channel(wired):
