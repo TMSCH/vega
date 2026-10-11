@@ -53,6 +53,15 @@ def test_example_config_parses_and_names_no_ids():
     assert cfg.allowed_channels == frozenset()
 
 
+def test_any_channel_vega_is_in(tmp_path: Path):
+    cfg = config.from_dict({"access": {"users": [USER], "channels": ["*"]}})
+    assert decide(cfg, user_id=USER, channel_id=OTHER_CHANNEL, is_dm=False).allowed
+    assert not decide(cfg, user_id=OTHER_USER, channel_id=CHANNEL, is_dm=False).allowed
+    assert not decide(cfg, user_id=USER, channel_id="", is_dm=False).allowed
+    with pytest.raises(config.ConfigError):
+        config.from_dict({"access": {"channels": ["*", CHANNEL]}})
+
+
 def test_vega_config_env_wins(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("VEGA_CONFIG", str(tmp_path / "x.toml"))
     assert config.default_config_path() == tmp_path / "x.toml"

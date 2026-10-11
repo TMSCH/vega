@@ -29,6 +29,7 @@ DEFAULT_STATUS_PATTERNS = (
     r"\bwhat'?s (in )?the queue\b",
 )
 
+ANY_CHANNEL = "*"
 USER_ID_RE = re.compile(r"^[UW][A-Z0-9]{2,}$")
 CHANNEL_ID_RE = re.compile(r"^[CGD][A-Z0-9]{2,}$")
 
@@ -99,7 +100,12 @@ def from_dict(data: dict, source: Path | None = None) -> VegaConfig:
     status = _table(data, "status")
 
     users = _ids(access.get("users", []), USER_ID_RE, "access.users")
-    channels = _ids(access.get("channels", []), CHANNEL_ID_RE, "access.channels")
+    raw_channels = access.get("channels", [])
+    if raw_channels == [ANY_CHANNEL]:
+        # Any channel Vega has been invited to; Slack only delivers those.
+        channels = frozenset({ANY_CHANNEL})
+    else:
+        channels = _ids(raw_channels, CHANNEL_ID_RE, "access.channels")
     max_inline = int(runtime.get("max_inline_chars", 400))
     if max_inline < 40:
         raise ConfigError("runtime.max_inline_chars must be at least 40")

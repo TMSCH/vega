@@ -11,7 +11,9 @@
 # profile -> ⋮ -> Copy member ID. Empty means nobody.
 users = []
 # Channel ids (C… public, G… private or group DM) where Vega answers @mentions.
-# 1:1 DMs from allowlisted users are always accepted.
+# 1:1 DMs from allowlisted users are always accepted. ["*"] means any channel
+# Vega has been invited to (Slack only delivers those), still only from the
+# users above.
 channels = []
 # What anyone else is told, once per ten minutes at most. Nothing is relayed.
 # refusal = "Sorry, I only take requests from people and channels on my allowlist. Ask the fleet operator to add you if you need access."

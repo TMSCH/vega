@@ -157,7 +157,7 @@ In `~/.hermes/profiles/vega/vega.toml`:
 ```toml
 [access]
 users = ["U…", "U…"]   # Slack member ids: profile → ⋮ → Copy member ID
-channels = ["C…"]      # channels where Vega answers @mentions
+channels = ["C…"]      # channels where Vega answers @mentions, or ["*"] for any it is invited to
 ```
 
 Check the result with `vega config`. With an empty allowlist, Vega refuses
@@ -245,7 +245,7 @@ thurbox-cli session delete "🧪 vega-test-lead"
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `access.users` | `[]` | Slack member ids allowed to talk to Vega |
-| `access.channels` | `[]` | Channel ids where Vega answers. 1:1 DMs need only the user |
+| `access.channels` | `[]` | Channel ids where Vega answers, or `["*"]` for any channel it is invited to. 1:1 DMs need only the user |
 | `access.refusal` | polite text | What everyone else is told, at most once per ten minutes |
 | `mission_control.lead_match` | `Mission Control` | Substring that identifies the lead session |
 | `fleet.project` | `~/fleet` | fleet checkout used for the read-only views |
