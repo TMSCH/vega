@@ -9,5 +9,7 @@ set -euo pipefail
 profile="${VEGA_PROFILE:-vega}"
 
 vega config
-hermes -p "$profile" gateway status || true
-exec hermes gateway run "$@"
+env -u SLACK_BOT_TOKEN -u SLACK_APP_TOKEN hermes -p "$profile" gateway status || true
+# Hermes prefers a token from the environment over the profile's .env, so a shell
+# that exports another Slack app's token would make Vega connect as that app.
+exec env -u SLACK_BOT_TOKEN -u SLACK_APP_TOKEN -u SLACK_USER_TOKEN hermes gateway run "$@"

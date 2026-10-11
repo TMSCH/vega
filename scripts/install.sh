@@ -15,10 +15,17 @@ command -v hermes >/dev/null || {
 }
 command -v uv >/dev/null || { echo "uv is not installed: https://docs.astral.sh/uv/" >&2; exit 1; }
 
+# Hermes refuses a distribution that contains symlinks (a local .venv has them),
+# so the profile is installed from a clean export of the committed files. The
+# export lives at a fixed path because `hermes profile update` re-reads it.
+stage="${VEGA_DIST_DIR:-$HOME/.local/share/vega/dist}"
+rm -rf "$stage" && mkdir -p "$stage"
+git -C "$repo" archive HEAD | tar -x -C "$stage"
+
 if hermes profile list 2>/dev/null | grep -qw "$profile"; then
-  hermes profile update "$profile"
+  hermes profile update "$profile" --yes   # keeps config.yaml, .env and vega.toml
 else
-  hermes profile install "$repo" --name "$profile" --alias
+  hermes profile install "$stage" --name "$profile" --alias --yes
 fi
 
 home="${HERMES_ROOT:-$HOME/.hermes}/profiles/$profile"

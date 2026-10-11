@@ -26,9 +26,10 @@ class FakeRunner:
     fleet_out: str = "fleet status\n  1 topic"
     calls: list[tuple[list[str], str | None]] = field(default_factory=list)
 
-    def __call__(self, argv, *, input=None, timeout=30.0):
+    def __call__(self, argv, *, input=None, timeout=30.0, drop_env=()):
         argv = list(argv)
         self.calls.append((argv, input))
+        self.dropped = tuple(drop_env)
         if argv[:3] == ["thurbox-cli", "session", "list"]:
             return Completed(0, json.dumps(self.sessions), "")
         if argv[:3] == ["thurbox-cli", "message", "send"]:

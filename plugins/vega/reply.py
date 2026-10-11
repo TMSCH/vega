@@ -17,6 +17,11 @@ _CHANNEL = re.compile(r"^[CGD][A-Z0-9]{2,}$")
 _TS = re.compile(r"^\d{6,}\.\d{1,6}$")
 
 
+# Tokens Hermes would take from the environment over the profile's .env. A shell
+# exporting another app's token must not make Vega post as that app.
+FOREIGN_TOKEN_ENV = ("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_USER_TOKEN")
+
+
 class ReplyError(RuntimeError):
     pass
 
@@ -58,7 +63,9 @@ def post(
     if dry_run:
         return f"[dry-run] would post to {target.hermes()}:\n{text.rstrip()}"
     argv = ["hermes", "-p", profile, "send", "--to", target.hermes(), "--quiet"]
-    result = (runner or _runner.run)(argv, input=text, timeout=60)
+    result = (runner or _runner.run)(
+        argv, input=text, timeout=60, drop_env=FOREIGN_TOKEN_ENV
+    )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise ReplyError(f"hermes send failed ({result.returncode}): {detail}")

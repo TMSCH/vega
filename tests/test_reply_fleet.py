@@ -47,6 +47,17 @@ def test_post_goes_through_vegas_hermes_profile_on_stdin():
         "--quiet",
     ]
     assert stdin == "hello"
+    assert "SLACK_BOT_TOKEN" in runner.dropped
+
+
+def test_runner_drops_named_env(monkeypatch):
+    from vega.runner import run
+
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "not-a-real-token")
+    keep = run(["/usr/bin/env"]).stdout
+    dropped = run(["/usr/bin/env"], drop_env=["SLACK_BOT_TOKEN"]).stdout
+    assert "SLACK_BOT_TOKEN=" in keep
+    assert "SLACK_BOT_TOKEN=" not in dropped
 
 
 def test_post_refuses_empty_and_reports_failure():

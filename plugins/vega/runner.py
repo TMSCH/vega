@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -18,13 +19,24 @@ Runner = Callable[..., Completed]
 
 
 def run(
-    argv: Sequence[str], *, input: str | None = None, timeout: float = 30.0
+    argv: Sequence[str],
+    *,
+    input: str | None = None,
+    timeout: float = 30.0,
+    drop_env: Sequence[str] = (),
 ) -> Completed:
-    """Run ``argv`` (never through a shell) and capture its output."""
+    """Run ``argv`` (never through a shell) and capture its output.
+
+    ``drop_env`` names variables the child must not inherit.
+    """
+    env = None
+    if drop_env:
+        env = {k: v for k, v in os.environ.items() if k not in set(drop_env)}
     try:
         proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
             list(argv),
             input=input,
+            env=env,
             capture_output=True,
             text=True,
             timeout=timeout,
