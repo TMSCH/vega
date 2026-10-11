@@ -201,8 +201,15 @@ DM it.
 
 ### 7. Tell Mission Control how to answer
 
-Put this paragraph in fleet's gitignored `orchestration/queue/OPERATOR.md`, or
-anywhere else in the lead's standing context:
+Nothing is needed for replies to work. Every relayed line ends with
+`(answer in Slack with: vega reply <channel>/<thread_ts> "<text>", or vega reply
+<channel>/<thread_ts> --file <path>)`, so Mission Control reads how to answer in
+the message itself. Set `mission_control.reply_hint = false` to drop that tail.
+
+For the rest of the etiquette, add this paragraph to the lead's standing
+instructions. Those are fleet's `FLEET.md`, which is tracked. fleet's gitignored
+`orchestration/queue/OPERATOR.md` does not reach the lead: fleet hands it only
+to workers, in their briefs.
 
 > **Requests from Slack.** A message that starts with `[from: <name> · slack:
 > <channel>/<thread_ts>]` came from a teammate on Slack, through Vega. Treat it

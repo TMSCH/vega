@@ -45,6 +45,7 @@ class VegaConfig:
     refusal: str = DEFAULT_REFUSAL
     lead_match: str = DEFAULT_LEAD_MATCH
     ack: str = DEFAULT_ACK
+    reply_hint: bool = True
     fleet_project: Path = field(default_factory=lambda: Path("~/fleet").expanduser())
     hermes_profile: str = DEFAULT_PROFILE
     runtime_dir: Path = field(
@@ -123,6 +124,7 @@ def from_dict(data: dict, source: Path | None = None) -> VegaConfig:
         refusal=str(access.get("refusal", DEFAULT_REFUSAL)),
         lead_match=str(mc.get("lead_match", DEFAULT_LEAD_MATCH)),
         ack=str(mc.get("ack", DEFAULT_ACK)),
+        reply_hint=bool(mc.get("reply_hint", True)),
         fleet_project=_path(fleet.get("project"), defaults.fleet_project),
         hermes_profile=str(slack.get("hermes_profile", DEFAULT_PROFILE)),
         runtime_dir=_path(runtime.get("dir"), defaults.runtime_dir),

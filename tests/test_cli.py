@@ -77,7 +77,9 @@ def test_relay_simulation(monkeypatch, capsys, conf, fake):
     )
     out = capsys.readouterr().out
     assert code == 0 and "outcome: relayed" in out
-    assert fake.sent()[0][-1] == f"[from: Ada · slack: {CHANNEL}/{TS}] ship it"
+    line = fake.sent()[0][-1]
+    assert line.startswith(f"[from: Ada · slack: {CHANNEL}/{TS}] ship it (answer in")
+    assert f'vega reply {CHANNEL}/{TS} "<text>"' in line
 
 
 def test_relay_simulation_refuses_stranger(monkeypatch, capsys, conf, fake):

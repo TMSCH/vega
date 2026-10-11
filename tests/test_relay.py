@@ -63,6 +63,20 @@ def test_thread_context_forces_a_body_file_and_is_capped(cfg):
     assert content.rstrip().endswith("short ask")
 
 
+def test_reply_hint_rides_on_every_line(cfg):
+    from dataclasses import replace
+
+    hinted = replace(cfg, reply_hint=True)
+    short, _ = format_relay(msg(), hinted)
+    long, _ = format_relay(msg("a\nb"), hinted)
+    for line in (short, long):
+        assert "\n" not in line
+        assert line.endswith(
+            f'(answer in Slack with: vega reply {CHANNEL}/{TS} "<text>", '
+            f"or vega reply {CHANNEL}/{TS} --file <path>)"
+        )
+
+
 def test_resolve_lead_matches_glyphed_name(fake):
     assert resolve_lead("mission control", fake) == LeadSession(
         "lead-uuid", "📡 Mission Control"

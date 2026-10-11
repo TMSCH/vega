@@ -59,5 +59,6 @@ def cfg(tmp_path: Path) -> config.VegaConfig:
             "access": {"users": [USER], "channels": [CHANNEL]},
             "runtime": {"dir": str(tmp_path / "state"), "max_inline_chars": 60},
             "fleet": {"project": str(tmp_path / "fleet")},
+            "mission_control": {"reply_hint": False},
         }
     )

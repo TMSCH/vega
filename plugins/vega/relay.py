@@ -76,15 +76,25 @@ def format_relay(msg: InboundMessage, cfg: VegaConfig) -> tuple[str, Path | None
     text = msg.text.strip()
     flat = _SPACE.sub(" ", text)
     context = msg.thread_context.strip()
+    hint = f" {reply_hint(msg)}" if cfg.reply_hint else ""
     if not context and "\n" not in text and len(flat) <= cfg.max_inline_chars:
-        return f"{header(msg)} {flat}", None
+        return f"{header(msg)} {flat}{hint}", None
     body = write_body(msg, cfg.runtime_dir)
     preview = flat[:80].rstrip() + ("…" if len(flat) > 80 else "")
     what = "message with thread context" if context else "long message"
     return (
         f"{header(msg)} {what} ({len(text)} chars), full text in {body}"
-        f' - starts: "{preview}"',
+        f' - starts: "{preview}"{hint}',
         body,
+    )
+
+
+def reply_hint(msg: InboundMessage) -> str:
+    """How to answer, carried on every line so the lead needs no standing setup."""
+    target = reply_target(msg)
+    return (
+        f'(answer in Slack with: vega reply {target} "<text>", '
+        f"or vega reply {target} --file <path>)"
     )
 
 

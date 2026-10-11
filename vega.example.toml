@@ -24,6 +24,9 @@ channels = []
 # lead_match = "Mission Control"
 # Posted in the Slack thread once a message is relayed.
 # ack = "Passed to Mission Control. It will answer in this thread."
+# Append "(answer in Slack with: vega reply <channel>/<ts> …)" to every relayed
+# line, so Mission Control knows how to answer without any standing instruction.
+# reply_hint = true
 
 [fleet]
 # The fleet checkout whose read-only commands answer status questions
