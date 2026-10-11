@@ -143,6 +143,13 @@ SLACK_ALLOW_ALL_USERS=true
 
 Editing the file keeps the tokens out of shell history.
 
+Hermes prefers a `SLACK_BOT_TOKEN` or `SLACK_APP_TOKEN` from the process
+environment over the profile's `.env`. If your shell exports another Slack
+app's token, Vega would connect as that app. `scripts/run.sh` and `vega reply`
+strip those variables before starting Hermes. If you start the gateway any
+other way, do the same. A launchd service started by `hermes gateway install`
+does not read your shell rc files, so it is unaffected.
+
 ### 4. Fill in the allowlist
 
 In `~/.hermes/profiles/vega/vega.toml`:
