@@ -199,10 +199,6 @@ included. `hermes -p vega gateway status` shows whether Vega is being served.
 Then invite `@Vega` to an allowlisted channel and send it a message there, or
 DM it.
 
-In channels, every message to Vega needs an `@Vega`, including replies in a
-thread it has already answered in (`slack.thread_require_mention: true`). Other
-people's conversation in that thread never reaches Vega. DMs need no mention.
-
 ### 7. Tell Mission Control how to answer
 
 Nothing is needed for replies to work. Every relayed line ends with
