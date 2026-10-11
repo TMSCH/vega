@@ -1,0 +1,40 @@
+# Hermes config for Vega's profile. Installed by `hermes profile install`;
+# `hermes profile update vega` keeps your local edits unless --force-config.
+#
+# Not here on purpose: the model provider (run `hermes -p vega model`), Slack
+# tokens (the profile's .env), and every Slack id (vega.toml beside this file).
+
+plugins:
+  # The vega plugin: allowlist gate, relay to Mission Control, status tools.
+  enabled:
+    - vega
+
+# Vega's model only ever answers status questions, so on Slack it carries
+# Vega's two tools and nothing else: no terminal, no files, no web.
+platform_toolsets:
+  slack: [vega]
+  cli: [vega]
+
+slack:
+  # Channels: answer only when @mentioned; replies in an existing thread need none.
+  require_mention: true
+  # Vega's plugin refuses strangers itself (SLACK_ALLOW_ALL_USERS=true in .env lets
+  # them reach it); Hermes' own pairing flow stays off.
+  unauthorized_dm_behavior: ignore
+  # Other bots never reach Vega.
+  allow_bots: none
+
+platforms:
+  slack:
+    reply_to_mode: first
+    extra:
+      # Every reply goes in the thread of the message it answers; Mission Control
+      # replies land in the same thread through `vega reply`.
+      reply_in_thread: true
+      reply_broadcast: false
+      unfurl_links: false
+      unfurl_media: false
+
+approvals:
+  # Vega has no terminal tool; anything that would still ask for approval is refused.
+  mode: manual
