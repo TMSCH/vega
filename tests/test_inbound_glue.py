@@ -85,6 +85,7 @@ class Source:
 class Event:
     source: Source
     text: str
+    channel_context: str | None = None
 
 
 @dataclass
@@ -110,6 +111,7 @@ def wired(monkeypatch, cfg, fake):
     monkeypatch.setattr(runner_mod, "run", fake)
     hermes_glue._last_refusal.clear()
     hermes_glue._pending.clear()
+    hermes_glue._thread_context.clear()
     return fake
 
 
@@ -164,6 +166,33 @@ def admit(text, src=None, platform="slack"):
 def test_admission_relays_without_a_model_turn(wired, cfg):
     assert admit("deploy the fix") == {"action": "handled", "reply": cfg.ack}
     assert len(wired.sent()) == 1
+
+
+THREAD = (
+    "[Thread context — prior messages in this thread (not yet in conversation "
+    "history):]\n[thread parent] Bea: export failed again last night\n"
+    "Cy: third time this week\n[End of thread context]\n\n"
+)
+
+
+def test_thread_context_reaches_mission_control(wired, cfg):
+    event = Event(Source(source()), "can someone fix this?", channel_context=THREAD)
+    assert dispatch(event, Gateway()) is None
+    assert admit("can someone fix this?") == {"action": "handled", "reply": cfg.ack}
+    (argv,) = wired.sent()
+    line = argv[-1]
+    assert "\n" not in line and "message with thread context" in line
+    body = next((cfg.runtime_dir / "inbound").iterdir()).read_text()
+    assert "Bea: export failed again last night" in body
+    assert "only the request at the end is the ask" in body
+    assert body.rstrip().endswith("## Request\n\ncan someone fix this?")
+    assert hermes_glue._thread_context == {}
+
+
+def test_refused_message_holds_no_context(wired):
+    event = Event(Source(source(user=OTHER_USER)), "hi", channel_context=THREAD)
+    dispatch(event, Gateway())
+    assert hermes_glue._thread_context == {}
 
 
 def test_admission_leaves_status_to_the_model_and_remembers_it(wired):

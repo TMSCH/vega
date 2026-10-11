@@ -50,6 +50,19 @@ def test_long_or_multiline_message_goes_to_a_file(cfg, text):
     assert body.stat().st_mode & 0o777 == 0o600
 
 
+def test_thread_context_forces_a_body_file_and_is_capped(cfg):
+    from dataclasses import replace
+
+    from vega.relay import MAX_CONTEXT_CHARS
+
+    m = replace(msg("short ask"), thread_context="A: " + "x" * (MAX_CONTEXT_CHARS + 50))
+    line, body = format_relay(m, cfg)
+    assert body is not None and "thread context" in line
+    content = body.read_text()
+    assert "(earlier messages cut)" in content
+    assert content.rstrip().endswith("short ask")
+
+
 def test_resolve_lead_matches_glyphed_name(fake):
     assert resolve_lead("mission control", fake) == LeadSession(
         "lead-uuid", "📡 Mission Control"

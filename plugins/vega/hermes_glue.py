@@ -29,6 +29,10 @@ TOOLSET = "vega"
 REFUSAL_COOLDOWN_SECONDS = 600
 _last_refusal: dict[str, float] = {}
 _pending: dict[str, InboundMessage] = {}
+# Thread history the Slack adapter fetched, carried from pre_gateway_dispatch (which
+# sees the event) to post_gateway_admission (which only gets the text).
+_thread_context: dict[tuple[str, str], str] = {}
+MAX_HELD_CONTEXTS = 200
 
 
 def register(ctx: Any) -> None:
@@ -62,6 +66,7 @@ async def pre_gateway_dispatch(event: Any = None, gateway: Any = None, **_: Any)
         msg = inbound.from_source(source.to_dict(), getattr(event, "text", "") or "")
         gate = inbound.check(msg, cfg, is_bot=bool(getattr(source, "is_bot", False)))
         if gate.kind != "refused":
+            _hold_context(msg.channel_id, msg.message_ts, event)
             return None
         logger.info(
             "vega: refusing %s in %s (%s)", msg.user_id, msg.channel_id, gate.detail
@@ -86,7 +91,11 @@ async def post_gateway_admission(
         return None
     try:
         cfg = config.load()
-        msg = inbound.from_source(source or {}, text or "")
+        src = source or {}
+        context = _thread_context.pop(
+            (str(src.get("chat_id") or ""), str(src.get("message_id") or "")), ""
+        )
+        msg = inbound.from_source(src, text or "", thread_context=context)
         outcome = await asyncio.to_thread(inbound.handle, msg, cfg)
     except Exception:
         logger.exception("vega: relay failed")
@@ -96,6 +105,15 @@ async def post_gateway_admission(
         return None
     logger.info("vega: %s - %s", outcome.kind, outcome.detail)
     return {"action": "handled", "reply": outcome.reply}
+
+
+def _hold_context(channel_id: str, message_ts: str, event: Any) -> None:
+    context = getattr(event, "channel_context", None)
+    if not context or not message_ts:
+        return
+    if len(_thread_context) >= MAX_HELD_CONTEXTS:
+        _thread_context.pop(next(iter(_thread_context)))
+    _thread_context[(channel_id, message_ts)] = str(context)
 
 
 def _platform(source: Any) -> str:

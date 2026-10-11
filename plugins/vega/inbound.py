@@ -30,7 +30,9 @@ class Outcome:
     detail: str
 
 
-def from_source(source: Mapping[str, Any], text: str) -> InboundMessage:
+def from_source(
+    source: Mapping[str, Any], text: str, thread_context: str = ""
+) -> InboundMessage:
     """Build a message from a Hermes ``SessionSource.to_dict()``.
 
     Hermes threads Slack replies: a top-level message's thread is its own ts, so the
@@ -45,6 +47,7 @@ def from_source(source: Mapping[str, Any], text: str) -> InboundMessage:
         text=text,
         message_ts=message_ts,
         is_dm=source.get("chat_type") == "dm",
+        thread_context=thread_context,
     )
 
 

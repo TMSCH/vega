@@ -58,6 +58,14 @@ A message with line breaks, or longer than `runtime.max_inline_chars` (default
 400), is written to `<runtime dir>/inbound/…md` (mode 600). The line then points
 at that file instead of carrying the text.
 
+**Thread context.** When Vega is tagged inside a Slack thread, Hermes' Slack
+adapter fetches the earlier messages in that thread: the whole thread the first
+time, then only new messages on later mentions. Vega puts that history in the
+body file under "Thread so far", with the request underneath, and the line says
+`message with thread context`. History is capped at 20,000 characters, keeping
+the newest. It is labelled as background, because anyone in the channel may have
+written it; only the tagged message is the request.
+
 **How Vega finds the lead.** It never types the session's name. It matches it:
 Vega runs `thurbox-cli session list --json` and picks the one live session whose
 name contains `mission_control.lead_match` (default `Mission Control`, ignoring
