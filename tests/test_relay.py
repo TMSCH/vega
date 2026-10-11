@@ -98,6 +98,7 @@ def test_relay_sends_one_waking_message_to_the_lead(cfg, fake):
         line,
     ]
     assert "--no-wake" not in argv
+    assert fake.dropped == ("THURBOX_SESSION", "THURBOX_TASK")
 
 
 def test_relay_surfaces_send_failure(cfg, fake):

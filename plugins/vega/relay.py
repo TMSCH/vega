@@ -19,6 +19,9 @@ from .runner import Runner
 
 THURBOX = "thurbox-cli"
 MESSAGE_KIND = "slack"
+# thurbox stamps the sender from these. Vega is not the session that launched it,
+# so a gateway started from inside a thurbox session must not claim to be it.
+LAUNCHER_ENV = ("THURBOX_SESSION", "THURBOX_TASK")
 _UNSAFE_NAME = re.compile(r"[\[\]\r\n\t·]+")
 _SPACE = re.compile(r"\s+")
 
@@ -133,7 +136,7 @@ def deliver(line: str, lead: LeadSession, runner: Runner | None = None) -> None:
         "--body",
         line,
     ]
-    result = (runner or _runner.run)(argv, timeout=15)
+    result = (runner or _runner.run)(argv, timeout=15, drop_env=LAUNCHER_ENV)
     if result.returncode != 0:
         raise RelayError(
             f"thurbox-cli message send failed: {result.stderr.strip() or result.stdout}"
