@@ -24,6 +24,9 @@ class FakeRunner:
     send_rc: int = 0
     hermes_rc: int = 0
     fleet_out: str = "fleet status\n  1 topic"
+    find_out: str = "[]"
+    find_rc: int = 0
+    task_send_rc: int = 0
     calls: list[tuple[list[str], str | None]] = field(default_factory=list)
 
     def __call__(self, argv, *, input=None, timeout=30.0, drop_env=()):
@@ -33,18 +36,25 @@ class FakeRunner:
         if argv[:3] == ["thurbox-cli", "session", "list"]:
             return Completed(0, json.dumps(self.sessions), "")
         if argv[:3] == ["thurbox-cli", "message", "send"]:
-            return Completed(self.send_rc, "", "" if self.send_rc == 0 else "boom")
+            rc = self.task_send_rc if argv[4] == "task-uuid" else self.send_rc
+            return Completed(rc, "", "" if rc == 0 else "boom")
         if argv[:1] == ["hermes"]:
             return Completed(self.hermes_rc, "", "" if self.hermes_rc == 0 else "nope")
+        if argv[:2] == ["uv", "run"] and "find" in argv:
+            return Completed(self.find_rc, self.find_out, "x" if self.find_rc else "")
         if argv[:2] == ["uv", "run"]:
             return Completed(0, self.fleet_out, "")
         raise AssertionError(f"unexpected command {argv}")
+
+    def finds(self) -> list[list[str]]:
+        return [a for a, _ in self.calls if "find" in a and a[:2] == ["uv", "run"]]
 
     def sent(self) -> list[list[str]]:
         return [a for a, _ in self.calls if a[:3] == ["thurbox-cli", "message", "send"]]
 
 
 LEAD = {"id": "lead-uuid", "name": "📡 Mission Control", "stopped": False}
+TASK = {"id": "task-uuid", "name": "🚀 fix export", "stopped": False}
 
 
 @pytest.fixture

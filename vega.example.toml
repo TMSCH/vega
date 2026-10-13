@@ -24,13 +24,18 @@ channels = []
 # lead_match = "Mission Control"
 # Posted in the Slack thread once a message is relayed.
 # ack = "Passed to Mission Control. It will answer in this thread."
+# Posted instead when the thread has a task with a live session and the message went
+# straight to that session. {task} is the task's ref.
+# task_ack = "Passed to the session working on {task}. It will answer in this thread."
 # Append "(answer in Slack with: vega reply <channel>/<ts> …)" to every relayed
 # line, so Mission Control knows how to answer without any standing instruction.
 # reply_hint = true
 
 [fleet]
 # The fleet checkout whose read-only commands answer status questions
-# (`fleet status`, `fleet queue list --live`, `fleet context`).
+# (`fleet status`, `fleet queue list --live`, `fleet context`) and which Vega asks
+# (`fleet queue find --origin slack:<channel>/<thread_ts> --json`) whether a Slack
+# thread has a task with a live session to route its replies to.
 # project = "~/fleet"
 
 [slack]

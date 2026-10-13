@@ -1,8 +1,10 @@
-"""Slack -> Mission Control: format one inbound message and hand it to the lead session.
+"""Slack -> a session: format one inbound message and hand it to where it belongs.
 
-Mission Control is a thurbox session. Vega finds it by matching its name (names carry a
-glyph, so they are matched, never typed) and delivers with ``thurbox-cli message send``,
-which wakes it.
+A thread that already has a task with a live session goes to that session; everything
+else goes to Mission Control. Both are thurbox sessions. Vega finds Mission Control by
+matching its name (names carry a glyph, so they are matched, never typed) and delivers
+with ``thurbox-cli message send``, which wakes it. A task's session is found from
+fleet's own records, per message: Vega keeps no table of threads.
 """
 
 from __future__ import annotations
@@ -51,6 +53,18 @@ class LeadSession:
     name: str
 
 
+@dataclass(frozen=True)
+class Delivery:
+    """Where a message went and what was sent."""
+
+    session: LeadSession
+    line: str
+    # The task whose session took the message; None when it went to the lead.
+    task: str | None = None
+    # Why a thread's task did not get it, when one was expected to.
+    note: str | None = None
+
+
 class RelayError(RuntimeError):
     """Mission Control could not be found or did not accept the message."""
 
@@ -60,13 +74,24 @@ def reply_target(msg: InboundMessage) -> str:
     return f"{msg.channel_id}/{msg.thread_ts}"
 
 
+def origin(msg: InboundMessage) -> str:
+    """The opaque origin fleet records on a task made for this Slack thread."""
+    return f"slack:{reply_target(msg)}"
+
+
 def header(msg: InboundMessage) -> str:
     name = _UNSAFE_NAME.sub(" ", msg.display_name or "").strip() or msg.user_id
     name = _SPACE.sub(" ", name)
     return f"[from: {name} · slack: {reply_target(msg)}]"
 
 
-def format_relay(msg: InboundMessage, cfg: VegaConfig) -> tuple[str, Path | None]:
+def format_relay(
+    msg: InboundMessage,
+    cfg: VegaConfig,
+    *,
+    task: str | None = None,
+    note: str | None = None,
+) -> tuple[str, Path | None]:
     """One line for Mission Control, plus the file holding the body when it is long.
 
     Short single-line messages travel inline. Anything multi-line or longer than
@@ -76,7 +101,11 @@ def format_relay(msg: InboundMessage, cfg: VegaConfig) -> tuple[str, Path | None
     text = msg.text.strip()
     flat = _SPACE.sub(" ", text)
     context = msg.thread_context.strip()
-    hint = f" {reply_hint(msg)}" if cfg.reply_hint else ""
+    # A task's worker has no standing instructions for Slack, so its line always
+    # says how to answer.
+    hint = f" {reply_hint(msg, task)}" if cfg.reply_hint or task else ""
+    if note:
+        hint = f" ({_clean(note)}){hint}"
     if not context and "\n" not in text and len(flat) <= cfg.max_inline_chars:
         return f"{header(msg)} {flat}{hint}", None
     body = write_body(msg, cfg.runtime_dir)
@@ -89,13 +118,19 @@ def format_relay(msg: InboundMessage, cfg: VegaConfig) -> tuple[str, Path | None
     )
 
 
-def reply_hint(msg: InboundMessage) -> str:
+def reply_hint(msg: InboundMessage, task: str | None = None) -> str:
     """How to answer, carried on every line so the lead needs no standing setup."""
     target = reply_target(msg)
+    about = f"task {_clean(task)}; " if task else ""
     return (
-        f'(answer in Slack with: vega reply {target} "<text>", '
+        f'({about}answer in Slack with: vega reply {target} "<text>", '
         f"or vega reply {target} --file <path>)"
     )
+
+
+def _clean(text: str) -> str:
+    """Text from fleet, flattened so it cannot break the one-line message."""
+    return _SPACE.sub(" ", _UNSAFE_NAME.sub(" ", text)).strip()
 
 
 def write_body(msg: InboundMessage, runtime_dir: Path) -> Path:
@@ -120,8 +155,7 @@ def write_body(msg: InboundMessage, runtime_dir: Path) -> Path:
     return path
 
 
-def resolve_lead(match: str, runner: Runner | None = None) -> LeadSession:
-    """The one live thurbox session whose name contains ``match`` (case-insensitive)."""
+def list_sessions(runner: Runner | None = None) -> list[dict]:
     result = (runner or _runner.run)([THURBOX, "session", "list", "--json"], timeout=10)
     if result.returncode != 0:
         raise RelayError(f"thurbox-cli session list failed: {result.stderr.strip()}")
@@ -129,6 +163,19 @@ def resolve_lead(match: str, runner: Runner | None = None) -> LeadSession:
         sessions = json.loads(result.stdout or "[]")
     except json.JSONDecodeError as exc:
         raise RelayError(f"thurbox-cli session list returned non-JSON: {exc}") from exc
+    if not isinstance(sessions, list):
+        raise RelayError("thurbox-cli session list did not return a list")
+    return [s for s in sessions if isinstance(s, dict)]
+
+
+def resolve_lead(
+    match: str,
+    runner: Runner | None = None,
+    sessions: list[dict] | None = None,
+) -> LeadSession:
+    """The one live thurbox session whose name contains ``match`` (case-insensitive)."""
+    if sessions is None:
+        sessions = list_sessions(runner)
     needle = match.casefold().strip()
     found = [
         LeadSession(s["id"], s.get("name", ""))
@@ -172,14 +219,94 @@ def deliver(line: str, lead: LeadSession, runner: Runner | None = None) -> None:
         )
 
 
+def _usable(session: dict) -> bool:
+    """Listed, running, and not a remote session thurbox cannot currently reach."""
+    return not session.get("stopped") and str(session.get("state", "")) not in (
+        "unreachable",
+        "disconnected",
+    )
+
+
+def find_task_session(
+    msg: InboundMessage,
+    cfg: VegaConfig,
+    sessions: list[dict],
+    runner: Runner | None = None,
+) -> tuple[tuple[LeadSession, str] | None, str | None]:
+    """The live session of a task fleet records for this thread, and a note if none.
+
+    Never raises: any trouble asking fleet reads as "no task", so the caller falls
+    back to the lead and the message is not lost. The note is set only when fleet
+    named a task whose session is gone.
+    """
+    argv = [
+        "uv",
+        "run",
+        "--project",
+        str(cfg.fleet_project),
+        "fleet",
+        "queue",
+        "find",
+        "--origin",
+        origin(msg),
+        "--json",
+    ]
+    try:
+        result = (runner or _runner.run)(argv, timeout=30)
+        if result.returncode != 0:
+            return None, None
+        entries = json.loads(result.stdout or "[]")
+        if not isinstance(entries, list):
+            return None, None
+        by_id = {str(s.get("id")): s for s in sessions}
+        dead: list[str] = []
+        for entry in entries:
+            if not isinstance(entry, dict) or not entry.get("session"):
+                continue
+            ref = str(entry.get("ref") or "?")
+            found = by_id.get(str(entry["session"]))
+            if found is not None and _usable(found):
+                return (
+                    LeadSession(str(found["id"]), str(found.get("name", ""))),
+                    ref,
+                ), None
+            dead.append(ref)
+    except Exception:  # a broken find must never drop a message
+        return None, None
+    if dead:
+        return None, f"task {dead[0]}'s session is gone, so this went to the lead"
+    return None, None
+
+
+def route(
+    msg: InboundMessage,
+    cfg: VegaConfig,
+    runner: Runner | None = None,
+    lead_match: str | None = None,
+) -> Delivery:
+    """Deliver ``msg`` to its thread's task session, else to the lead."""
+    sessions = list_sessions(runner)
+    found, note = find_task_session(msg, cfg, sessions, runner)
+    if found is not None:
+        session, ref = found
+        line, _ = format_relay(msg, cfg, task=ref)
+        try:
+            deliver(line, session, runner)
+            return Delivery(session, line, task=ref)
+        except RelayError:
+            note = f"task {ref} did not take it, so this went to the lead"
+    lead = resolve_lead(lead_match or cfg.lead_match, runner, sessions)
+    line, _ = format_relay(msg, cfg, note=note)
+    deliver(line, lead, runner)
+    return Delivery(lead, line, note=note)
+
+
 def relay(
     msg: InboundMessage,
     cfg: VegaConfig,
     runner: Runner | None = None,
     lead_match: str | None = None,
 ) -> tuple[LeadSession, str]:
-    """Format ``msg``, deliver it to Mission Control, return where and what."""
-    lead = resolve_lead(lead_match or cfg.lead_match, runner)
-    line, _ = format_relay(msg, cfg)
-    deliver(line, lead, runner)
-    return lead, line
+    """Format ``msg``, deliver it, return where and what."""
+    delivery = route(msg, cfg, runner, lead_match)
+    return delivery.session, delivery.line

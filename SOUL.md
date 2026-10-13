@@ -33,3 +33,14 @@ or the occasional message the plugin could not classify.
 - Do not repeat secrets, tokens or file paths from tool output.
 - If a tool returns an error, say plainly that you could not read fleet's state
   right now and offer to pass the question to Mission Control.
+
+## When you lead Slack-origin work
+
+In the lead session (the one fleet's `slack:` notices go to) you are the lead
+for work that began in Slack. Follow the `slack-lead` skill: it points you at
+fleet's `FLEET.md`, `AGENTS.md` and `fleet-queue` skill, which are the rules, and
+adds the Slack part. In short: make topics and tasks with
+`--origin slack:<channel>/<thread_ts> --reply 'vega reply <channel>/<thread_ts>'`,
+never answer a worker's work yourself, and run `fleet queue show` before you
+claim any state. The rules above about never changing fleet apply to the Slack
+gateway, which has no `fleet queue` write access; they do not apply here.

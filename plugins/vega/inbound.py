@@ -14,7 +14,7 @@ from typing import Any, Literal
 from .access import decide
 from .config import VegaConfig
 from .fleet import is_status_question
-from .relay import InboundMessage, RelayError, relay
+from .relay import InboundMessage, RelayError, route
 from .runner import Runner
 
 RELAY_FAILED = (
@@ -78,7 +78,14 @@ def handle(
     if is_status_question(msg.text, cfg):
         return Outcome("status", None, "left to Vega: read-only fleet status")
     try:
-        lead, line = relay(msg, cfg, runner, lead_match=lead_match)
+        sent = route(msg, cfg, runner, lead_match=lead_match)
     except RelayError as exc:
         return Outcome("failed", RELAY_FAILED, str(exc))
-    return Outcome("relayed", cfg.ack, f"sent to {lead.name!r} ({lead.id}): {line}")
+    ack = cfg.ack
+    if sent.task:
+        ack = cfg.task_ack.replace("{task}", sent.task)
+    return Outcome(
+        "relayed",
+        ack,
+        f"sent to {sent.session.name!r} ({sent.session.id}): {sent.line}",
+    )

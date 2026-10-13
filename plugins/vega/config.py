@@ -20,6 +20,9 @@ DEFAULT_REFUSAL = (
     "Ask the fleet operator to add you if you need access."
 )
 DEFAULT_ACK = "Passed to Mission Control. It will answer in this thread."
+DEFAULT_TASK_ACK = (
+    "Passed to the session working on {task}. It will answer in this thread."
+)
 DEFAULT_STATUS_PATTERNS = (
     r"\bwhat'?s (running|in flight|going on|happening)\b",
     r"\bwhat is (running|in flight|going on|happening)\b",
@@ -45,6 +48,7 @@ class VegaConfig:
     refusal: str = DEFAULT_REFUSAL
     lead_match: str = DEFAULT_LEAD_MATCH
     ack: str = DEFAULT_ACK
+    task_ack: str = DEFAULT_TASK_ACK
     reply_hint: bool = True
     fleet_project: Path = field(default_factory=lambda: Path("~/fleet").expanduser())
     hermes_profile: str = DEFAULT_PROFILE
@@ -124,6 +128,7 @@ def from_dict(data: dict, source: Path | None = None) -> VegaConfig:
         refusal=str(access.get("refusal", DEFAULT_REFUSAL)),
         lead_match=str(mc.get("lead_match", DEFAULT_LEAD_MATCH)),
         ack=str(mc.get("ack", DEFAULT_ACK)),
+        task_ack=str(mc.get("task_ack", DEFAULT_TASK_ACK)),
         reply_hint=bool(mc.get("reply_hint", True)),
         fleet_project=_path(fleet.get("project"), defaults.fleet_project),
         hermes_profile=str(slack.get("hermes_profile", DEFAULT_PROFILE)),

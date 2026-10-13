@@ -66,6 +66,19 @@ body file under "Thread so far", with the request underneath, and the line says
 the newest. It is labelled as background, because anyone in the channel may have
 written it; only the tagged message is the request.
 
+**Thread routing.** Before falling back to the lead, Vega asks fleet whether the
+thread already has a task: `uv run --project <fleet.project> fleet queue find
+--origin slack:<channel>/<thread_ts> --json`, which lists `{ref, state, session,
+host}` for tasks with that origin and a live recorded session. If thurbox still
+lists one of those sessions, and it is not stopped or unreachable, the message goes
+straight to that session, with a line saying which task it is and how to answer
+(`vega reply <channel>/<thread_ts>`). Nothing is stored: the binding is fleet's
+record plus the session being alive, so it ends when the session is deleted. If
+fleet finds nothing, fails, answers something unparseable, or the session is gone
+or refuses the message, the message goes to the lead exactly as before (with a
+one-line note when a task's session was found dead). A message is never dropped
+for want of a task session. The allowlist and status checks run first.
+
 **How Vega finds the lead.** It never types the session's name. It matches it:
 Vega runs `thurbox-cli session list --json` and picks the one live session whose
 name contains `mission_control.lead_match` (default `Mission Control`, ignoring
@@ -78,7 +91,29 @@ never sees a token.
 
 **What Vega never does.** It never runs a `fleet queue` command that writes,
 and it never edits the fleet checkout. It runs `thurbox-cli message send` to the
-lead and the three read-only views, and nothing else.
+lead or a thread's task session, `fleet queue find` and the three read-only views,
+and nothing else.
+
+## The lead session: Vega leads Slack-origin work
+
+Mission Control stays the lead for terminal work. For work that began in Slack,
+Vega's own session is the lead: it makes the topic and tasks with
+`--origin slack:<channel>/<thread_ts> --reply 'vega reply <channel>/<thread_ts>'`,
+so workers answer in the thread themselves. The rules are in `skills/slack-lead`
+and `SOUL.md`, and point at fleet's `FLEET.md`, `AGENTS.md` and `fleet-queue`
+skill rather than copying them.
+
+That session is separate from the Slack gateway, which stays read-only. Create it
+under a stable name with `scripts/lead-session.sh` (default `🛰 Vega Slack Lead`;
+it runs Hermes with the `terminal` toolset in the fleet checkout). Then add this
+line to fleet's `orchestration/owners.conf` (gitignored; fleet is not edited from
+here) so ready, stalled and needs-input notices for `slack:` tasks reach it:
+
+```
+slack: = Vega Slack Lead
+```
+
+If you rename the session with `VEGA_LEAD_NAME`, keep the substring in step.
 
 ## Repository layout
 
@@ -91,11 +126,12 @@ exactly the paths named in `distribution.yaml` into a `vega` profile.
 | `SOUL.md` | Vega's persona |
 | `config.yaml` | Hermes config for the profile: enables the plugin, restricts the Slack toolset, sets threading and mention rules |
 | `plugins/vega/` | The Hermes plugin: hooks, tools, and the relay, reply and status logic. It is also the `vega` Python package |
-| `skills/` | `fleet-status` and `mission-control-relay`, the skills Vega's model follows |
+| `skills/` | `fleet-status`, `mission-control-relay` and `slack-lead`, the skills Vega's model follows |
 | `slack/manifest.yaml` | Slack app manifest: Socket Mode, minimum scopes |
 | `vega.example.toml` | Every Vega setting with its default. The real `vega.toml` is never committed |
 | `scripts/install.sh` | Installs or updates the profile, seeds `vega.toml`, installs the `vega` command |
 | `scripts/run.sh` | Runs the gateway in the foreground |
+| `scripts/lead-session.sh` | Creates Vega's lead session in thurbox under a stable name |
 | `tests/` | pytest suite: relay formatting, allowlist, reply path, hooks, CLI |
 
 ## Setup: what the operator does next
@@ -263,7 +299,8 @@ thurbox-cli session delete "🧪 vega-test-lead"
 | `access.channels` | `[]` | Channel ids where Vega answers, or `["*"]` for any channel it is invited to. 1:1 DMs need only the user |
 | `access.refusal` | polite text | What everyone else is told, at most once per ten minutes |
 | `mission_control.lead_match` | `Mission Control` | Substring that identifies the lead session |
-| `fleet.project` | `~/fleet` | fleet checkout used for the read-only views |
+| `mission_control.task_ack` | polite text | What the thread is told when a task's session took the message |
+| `fleet.project` | `~/fleet` | fleet checkout used for the read-only views and for finding a thread's task session |
 | `slack.hermes_profile` | `vega` | Profile whose tokens `vega reply` uses |
 | `runtime.dir` | `~/.local/state/vega` | Where long inbound messages are written |
 | `runtime.dry_run` | `false` | `vega reply` prints instead of posting |
