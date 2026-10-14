@@ -1,8 +1,8 @@
-"""The decision Vega makes for every Slack message, shared by the gateway and the CLI.
+"""One inbound Slack message, and the decision the gate makes about it.
 
-refuse it (not allowlisted), leave it to Vega's model (a status question), or relay it
-to Mission Control and acknowledge. The gateway hooks and ``vega relay`` both call
-:func:`handle`, so the dry run exercises exactly what Slack traffic does.
+Shared by the gateway hooks and the ``vega`` command: build the message from a Hermes
+``SessionSource`` and decide whether its sender may talk to Vega. Everything admitted
+reaches Vega's model, which runs the intake itself with the origin tools.
 """
 
 from __future__ import annotations
@@ -13,26 +13,27 @@ from typing import Any, Literal
 
 from .access import decide
 from .config import VegaConfig
-from .fleet import is_status_question
-from .relay import InboundMessage, RelayError, relay
-from .runner import Runner
 
-RELAY_FAILED = (
-    "I couldn't reach Mission Control just now, so nothing was passed on. "
-    "Please try again in a few minutes."
-)
+
+@dataclass(frozen=True)
+class InboundMessage:
+    user_id: str
+    display_name: str
+    channel_id: str
+    thread_ts: str
+    text: str
+    message_ts: str = ""
+    is_dm: bool = False
 
 
 @dataclass(frozen=True)
 class Outcome:
-    kind: Literal["refused", "status", "relayed", "failed"]
+    kind: Literal["refused", "admitted"]
     reply: str | None
     detail: str
 
 
-def from_source(
-    source: Mapping[str, Any], text: str, thread_context: str = ""
-) -> InboundMessage:
+def from_source(source: Mapping[str, Any], text: str) -> InboundMessage:
     """Build a message from a Hermes ``SessionSource.to_dict()``.
 
     Hermes threads Slack replies: a top-level message's thread is its own ts, so the
@@ -47,7 +48,6 @@ def from_source(
         text=text,
         message_ts=message_ts,
         is_dm=source.get("chat_type") == "dm",
-        thread_context=thread_context,
     )
 
 
@@ -61,24 +61,4 @@ def check(msg: InboundMessage, cfg: VegaConfig, *, is_bot: bool = False) -> Outc
     )
     if not decision.allowed:
         return Outcome("refused", cfg.refusal, decision.reason)
-    return Outcome("relayed", None, decision.reason)
-
-
-def handle(
-    msg: InboundMessage,
-    cfg: VegaConfig,
-    *,
-    is_bot: bool = False,
-    runner: Runner | None = None,
-    lead_match: str | None = None,
-) -> Outcome:
-    gate = check(msg, cfg, is_bot=is_bot)
-    if gate.kind == "refused":
-        return gate
-    if is_status_question(msg.text, cfg):
-        return Outcome("status", None, "left to Vega: read-only fleet status")
-    try:
-        lead, line = relay(msg, cfg, runner, lead_match=lead_match)
-    except RelayError as exc:
-        return Outcome("failed", RELAY_FAILED, str(exc))
-    return Outcome("relayed", cfg.ack, f"sent to {lead.name!r} ({lead.id}): {line}")
+    return Outcome("admitted", None, decision.reason)

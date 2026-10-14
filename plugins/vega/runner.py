@@ -18,6 +18,23 @@ class Completed:
 Runner = Callable[..., Completed]
 
 
+def child_env(drop_env: Sequence[str]) -> dict[str, str] | None:
+    """The environment a child gets: the parent's minus ``drop_env``.
+
+    A name ending in ``*`` drops every variable with that prefix (``SLACK_*``). ``None``
+    means the parent's environment unchanged.
+    """
+    if not drop_env:
+        return None
+    names = {d for d in drop_env if not d.endswith("*")}
+    prefixes = tuple(d[:-1] for d in drop_env if d.endswith("*"))
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if k not in names and not (prefixes and k.startswith(prefixes))
+    }
+
+
 def run(
     argv: Sequence[str],
     *,
@@ -27,16 +44,13 @@ def run(
 ) -> Completed:
     """Run ``argv`` (never through a shell) and capture its output.
 
-    ``drop_env`` names variables the child must not inherit.
+    ``drop_env`` names variables the child must not inherit; see :func:`child_env`.
     """
-    env = None
-    if drop_env:
-        env = {k: v for k, v in os.environ.items() if k not in set(drop_env)}
     try:
         proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
             list(argv),
             input=input,
-            env=env,
+            env=child_env(drop_env),
             capture_output=True,
             text=True,
             timeout=timeout,

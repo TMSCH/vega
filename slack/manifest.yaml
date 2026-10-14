@@ -7,7 +7,7 @@
 # addressed to Vega in DMs and channels, post in threads, resolve display names.
 display_information:
   name: Vega
-  description: Front door to the fleet's Mission Control
+  description: Front door to the software fleet
   background_color: "#1d2b3a"
 features:
   app_home:
@@ -30,8 +30,8 @@ oauth_config:
       - im:write            # Hermes opens the DM it replies in
       - mpim:history        # group DMs that include Vega
       - mpim:read
-      - chat:write          # replies, refusals and Mission Control's answers
-      - users:read          # sender display names for the relay prefix
+      - chat:write          # replies, refusals and fleet news in the thread
+      - users:read          # sender display names, recorded as the requester
 settings:
   event_subscriptions:
     bot_events:

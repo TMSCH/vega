@@ -1,20 +1,27 @@
 # vega
 
 Vega is a [Hermes Agent](https://github.com/NousResearch/hermes-agent) that
-lets teammates talk to fleet's **Mission Control** from Slack.
+lets teammates hand work to fleet from Slack. **Each Slack thread is its own
+fleet origin**: the Hermes conversation behind the thread takes the request,
+opens the topic and its tasks, starts them when fuel allows, and reports back in
+the same thread as the work moves. No lead session sits in between.
 
-Mission Control is the lead: a long-lived Claude Code session inside thurbox.
-It decides what gets done and dispatches the workers. Vega does none of that.
-It is only the front door:
-
-- **Slack → Mission Control.** Vega relays each message addressed to it to the
-  lead session, as one line that says who asked and where to answer.
-- **Mission Control → Slack.** Mission Control answers in the right thread with
-  `vega reply`.
-- **Status questions.** Vega answers "what's running?" itself, from fleet's
-  read-only commands, so it does not wake Mission Control for them.
+- **Intake from the thread.** Vega's model runs fleet's intake with narrow
+  plugin tools: `vega_topic_add`, `vega_task_add`, `vega_dispatch`. Every fleet
+  command is a fixed argv built in code; the origin `slack:<channel>/<thread_ts>`
+  is set by the plugin, never by the model.
+- **News by polling, not by push.** Once a thread has tasks, the conversation
+  gets a Hermes heartbeat. Each tick calls `vega_fleet_news`, which reads
+  fleet's own records (`find --origin`, `show`, the task's `progress.jsonl`),
+  diffs them against what the thread was already told, and returns only what
+  is new: started, pull request opened, shipped with the link, landed,
+  abandoned and why, a worker's question. With nothing new the turn ends with
+  `NO_REPLY`, which posts nothing. When every task has landed or been
+  abandoned, the heartbeat is cleared.
+- **Status questions.** `vega_fleet_status`, `vega_find` and `vega_show` read
+  fleet's views.
 - **Access control.** Only allowlisted people and channels get through. Anyone
-  else gets a polite refusal, and nothing of theirs is relayed.
+  else gets a polite refusal, and nothing of theirs is recorded.
 
 Everything runs on the operator's machine. Vega reaches Slack over Socket Mode,
 an outbound WebSocket, so nothing listens on an inbound port.
@@ -28,57 +35,63 @@ Slack ──Socket Mode──▶ Hermes gateway (profile "vega")
                          │     not on the allowlist → one polite refusal, message dropped
                          │
                          ├─ post_gateway_admission (vega plugin)
-                         │     status question → Vega's model + vega_fleet_status tool
-                         │     anything else   → thurbox-cli message send <lead> "[from: … · slack: C…/ts] …"
-                         │                       and an ack in the thread; no model turn
+                         │     records the message verbatim in the thread's record,
+                         │     lets the model turn run (a heartbeat tick is recognised
+                         │     and not recorded)
                          ▼
-                    Mission Control (thurbox session) ──▶ vega reply C…/ts "…" ──▶ hermes -p vega send ──▶ Slack
+                    Vega's model + tools, for this thread only
+                         │  vega_topic_add   → fleet queue topic add … --by <asker>
+                         │  vega_task_add    → fleet queue add … --origin slack:C…/ts
+                         │  vega_dispatch    → fleet status --fuel, then
+                         │                    fleet queue dispatch --origin slack:C…/ts
+                         │  vega_fleet_news  → find --origin, show, progress.jsonl → diff
+                         │  vega_send        → fleet queue send <ref> '<answer>'
+                         ▼
+                    Hermes heartbeat (every 5 min while the thread has open tasks)
+                         → a normal idle-only turn → vega_fleet_news → post or NO_REPLY
 ```
 
-**Relaying is deterministic.** Requests are relayed by plugin code before any
-model turn starts, so a request reaches Mission Control word for word. Vega's
-model is used for one thing: turning fleet's read-only output into a short
-answer to a status question. On Slack it carries exactly two tools:
+**The origin is the thread, not the session.** Hermes' session id rotates on
+`/new`, `/stop` and context compression; the Slack thread does not. So the
+task records carry `slack:<channel>/<thread_ts>`, and Vega keeps its own record
+per thread under the runtime dir: the messages people addressed to it (verbatim,
+for the topic prompt), the topics and refs it opened, what has been reported,
+and the session the heartbeat was armed on.
 
-- `vega_fleet_status`: runs one of `fleet status`, `fleet queue list --live` or
-  `fleet context`.
-- `vega_relay_to_mission_control`: the fallback relay.
+**How the heartbeat starts.** Hermes registers a heartbeat watch from the
+`/heartbeat` command and from a restore scan. That scan is not only for
+restarts: the gateway's heartbeat poller runs it every few seconds over each
+served profile's session store. So the plugin only has to write the session's
+heartbeat row through Hermes' public `HeartbeatManager`, and the poller picks it
+up. The session id is read from the gateway's session store by the session key,
+which is bound on every turn, with `HERMES_SESSION_ID` as the fallback. All of
+that sits in `plugins/vega/heartbeat.py`.
 
-It has no terminal, files or web.
+**What a tick looks like.** The gateway injects the heartbeat prompt as an
+ordinary user turn, only when the session is idle, and never interrupts a
+running turn. Vega's hooks see it like any message: the allowlist check passes
+(the stored source is the person who started the thread), and the admission
+hook recognises the `[Heartbeat` prefix and records nothing. The model calls
+`vega_fleet_news` and posts the lines it returns, or `NO_REPLY`.
 
-**What Mission Control receives.** One line per message, delivered with
-`thurbox-cli message send`. Messages are sent without `--no-wake`, so a
-person's request wakes the lead.
+**The fuel gate is code.** `vega_dispatch` reads `fleet status --fuel` and
+dispatches only when every gated account is `fresh`, not `stale`, and at least
+`reserve + fleet.fuel_margin` (10 by default). Otherwise the tasks stay queued
+for the conductor, which dispatches near the reserve with one reading, and the
+tool says so.
 
-```
-[from: <display name> · slack: <channel id>/<thread_ts>] <the message>
-```
+**What the model can and cannot put on a command line.** Refs, slugs and
+branches are matched against regexes; titles and answers are one line that
+cannot start with `-`; the repository must be in `fleet.repos`; `publish` is an
+enum. The brief is written by the plugin from four sections, size-capped, to a
+mode-600 file. Every subprocess runs without a shell, with a timeout, and with
+`SLACK_*`, `THURBOX_SESSION` and `THURBOX_TASK` dropped from its environment,
+so a task can never record the gateway's launcher as its origin.
 
-A message with line breaks, or longer than `runtime.max_inline_chars` (default
-400), is written to `<runtime dir>/inbound/…md` (mode 600). The line then points
-at that file instead of carrying the text.
-
-**Thread context.** When Vega is tagged inside a Slack thread, Hermes' Slack
-adapter fetches the earlier messages in that thread: the whole thread the first
-time, then only new messages on later mentions. Vega puts that history in the
-body file under "Thread so far", with the request underneath, and the line says
-`message with thread context`. History is capped at 20,000 characters, keeping
-the newest. It is labelled as background, because anyone in the channel may have
-written it; only the tagged message is the request.
-
-**How Vega finds the lead.** It never types the session's name. It matches it:
-Vega runs `thurbox-cli session list --json` and picks the one live session whose
-name contains `mission_control.lead_match` (default `Mission Control`, ignoring
-the glyph). If no session matches, or more than one does, nothing is sent and
-the person is told to try again later.
-
-**Where the token lives.** The Slack tokens live only in Vega's Hermes profile.
-`vega reply` posts with `hermes -p vega send`, which reads them there. fleet
-never sees a token.
-
-**What Vega never does.** It never runs a `fleet queue` command that writes,
-and it never edits the fleet checkout. It runs `thurbox-cli message send` to the
-lead and the three read-only views, and nothing else.
+**What Vega never does.** It never runs `abandon`, `block`, bare `dispatch` or
+anything touching another origin's tasks. `vega_send` accepts only refs that
+`find --origin` lists for this thread, at most `origin.max_sends_per_hour` per
+task. There is no file, terminal or web tool.
 
 ## Repository layout
 
@@ -90,13 +103,17 @@ exactly the paths named in `distribution.yaml` into a `vega` profile.
 | `distribution.yaml` | Hermes distribution manifest: the owned paths and the env vars the profile needs |
 | `SOUL.md` | Vega's persona |
 | `config.yaml` | Hermes config for the profile: enables the plugin, restricts the Slack toolset, sets threading and mention rules |
-| `plugins/vega/` | The Hermes plugin: hooks, tools, and the relay, reply and status logic. It is also the `vega` Python package |
-| `skills/` | `fleet-status` and `mission-control-relay`, the skills Vega's model follows |
+| `plugins/vega/` | The Hermes plugin: hooks, tools, the origin logic, the heartbeat glue. It is also the `vega` Python package |
+| `plugins/vega/origin.py` | Thread records, topic prompts, briefs, the dispatch gate, the news diff |
+| `plugins/vega/heartbeat.py` | The one module that knows how a heartbeat is armed from a plugin |
+| `plugins/vega/fleet.py` | Every fleet argv Vega runs, and the checks on model-supplied values |
+| `skills/` | `fleet-origin` (points at fleet's `fleet-intake`) and `fleet-status` |
 | `slack/manifest.yaml` | Slack app manifest: Socket Mode, minimum scopes |
 | `vega.example.toml` | Every Vega setting with its default. The real `vega.toml` is never committed |
 | `scripts/install.sh` | Installs or updates the profile, seeds `vega.toml`, installs the `vega` command |
 | `scripts/run.sh` | Runs the gateway in the foreground |
-| `tests/` | pytest suite: relay formatting, allowlist, reply path, hooks, CLI |
+| `scripts/demo_offline.py` | The offline end-to-end demonstration against a throwaway Hermes home and a scratch queue |
+| `tests/` | pytest suite with stubbed `fleet` and Hermes, including an offline end-to-end run |
 
 ## Setup: what the operator does next
 
@@ -119,8 +136,7 @@ scripts/install.sh
   `vega.toml` exists yet.
 - Installs the `vega` command with `uv tool install`.
 
-It never touches another Hermes profile. A personal agent in the default
-profile stays as it is.
+It never touches another Hermes profile.
 
 ### 2. Create the Slack app from the manifest
 
@@ -132,9 +148,6 @@ profile stays as it is.
    OAuth Token** (`xoxb-…`).
 
 ### 3. Store the tokens in Vega's profile, never in the repo
-
-The tokens go in the profile's `.env`. The repo is not involved, and nothing
-outside Vega's profile reads that file.
 
 ```bash
 ${EDITOR:-vi} ~/.hermes/profiles/vega/.env
@@ -149,16 +162,12 @@ SLACK_APP_TOKEN=xapp-…
 SLACK_ALLOW_ALL_USERS=true
 ```
 
-Editing the file keeps the tokens out of shell history.
-
 Hermes prefers a `SLACK_BOT_TOKEN` or `SLACK_APP_TOKEN` from the process
-environment over the profile's `.env`. If your shell exports another Slack
-app's token, Vega would connect as that app. `scripts/run.sh` and `vega reply`
-strip those variables before starting Hermes. If you start the gateway any
-other way, do the same. A launchd service started by `hermes gateway install`
-does not read your shell rc files, so it is unaffected.
+environment over the profile's `.env`. `scripts/run.sh` and `vega reply` strip
+those variables before starting Hermes. If you start the gateway any other way,
+do the same.
 
-### 4. Fill in the allowlist
+### 4. Fill in the allowlist and the repositories
 
 In `~/.hermes/profiles/vega/vega.toml`:
 
@@ -166,10 +175,14 @@ In `~/.hermes/profiles/vega/vega.toml`:
 [access]
 users = ["U…", "U…"]   # Slack member ids: profile → ⋮ → Copy member ID
 channels = ["C…"]      # channels where Vega answers @mentions, or ["*"] for any it is invited to
+
+[fleet]
+project = "~/fleet"    # the control-plane checkout
+repos = ["~/app"]      # repositories a thread may open a task in; empty refuses every task
 ```
 
 Check the result with `vega config`. With an empty allowlist, Vega refuses
-everyone.
+everyone; with an empty `repos`, every `vega_task_add` is refused.
 
 Also restrict Hermes' own slash commands, such as `/model` and `/reset`, to
 yourself. The ids belong in the profile, not the repo:
@@ -182,76 +195,57 @@ hermes -p vega config set platforms.slack.extra.user_allowed_commands '[]'
 ### 5. Pick Vega's model
 
 ```bash
-hermes -p vega model      # any provider Hermes supports; status answers are short
+hermes -p vega model      # any provider Hermes supports
 ```
 
 ### 6. Start Vega
 
 ```bash
 scripts/run.sh            # foreground: `hermes gateway run`, which serves the vega profile
-# or, to keep it running across logins (a launchd LaunchAgent on macOS):
+# or, to keep it running across logins:
 hermes gateway install && hermes gateway start
 ```
 
 Hermes runs one host gateway per machine, and it serves every profile, Vega's
 included. `hermes -p vega gateway status` shows whether Vega is being served.
 
-Then invite `@Vega` to an allowlisted channel and send it a message there, or
-DM it.
+Then invite `@Vega` to an allowlisted channel and ask it for something there.
 
-### 7. Tell Mission Control how to answer
+### 7. What fleet needs
 
-Nothing is needed for replies to work. Every relayed line ends with
-`(answer in Slack with: vega reply <channel>/<thread_ts> "<text>", or vega reply
-<channel>/<thread_ts> --file <path>)`, so Mission Control reads how to answer in
-the message itself. Set `mission_control.reply_hint = false` to drop that tail.
-
-For the rest of the etiquette, add this paragraph to the lead's standing
-instructions. Those are fleet's `FLEET.md`, which is tracked. fleet's gitignored
-`orchestration/queue/OPERATOR.md` does not reach the lead: fleet hands it only
-to workers, in their briefs.
-
-> **Requests from Slack.** A message that starts with `[from: <name> · slack:
-> <channel>/<thread_ts>]` came from a teammate on Slack, through Vega. Treat it
-> as that person's request. When it becomes a topic, record who asked with
-> `fleet queue topic add … --by "<name>"`. Answer them in their thread, and
-> only there, by running `vega reply <channel>/<thread_ts> "<text>"`, or
-> `vega reply <channel>/<thread_ts> --file <path>` for anything long. Reply
-> when you accept the request, when its pull request opens, and when it
-> lands. If the line says the full text is in a file, read that file first.
-> Never post to Slack any other way, and never paste a token, a local path or
-> a machine name into a reply.
-
-The `--by` flag on `fleet queue topic add` is being added to fleet in parallel.
-Until it merges, record the requester in the topic's prompt instead.
+Nothing. The origin tools run `uv run --project <fleet.project> fleet …` from
+the gateway's own process, which needs only `uv` and `thurbox-cli` on its
+`PATH` (a gateway installed with `hermes gateway install` inherits the user's
+`~/.local/bin`). The queue is anchored on the checkout, not on the process cwd.
+Workers' questions reach the thread through `declare needs-input`, which the
+heartbeat reads from the task's `progress.jsonl`; no `--reply` command and no
+`owners.conf` rule is needed.
 
 ## Trying it without Slack
 
-The `vega` command runs the same code path as the gateway, with no Slack
-needed. For a throwaway relay target, first create a test session:
+The `vega` command runs the same code paths as the plugin, with no Slack
+needed.
 
 ```bash
-thurbox-cli session create --name "🧪 vega-test-lead" --repo-path "$PWD" --command "sleep 1800"
+export VEGA_CONFIG=/path/to/test-vega.toml      # with the fake ids below in [access]
+vega admit --user U0DEMOUSER1 --name "Demo Teammate" --channel C0DEMOCHAN1 \
+  --thread-ts 1700000000.000100 "Please add a retry to the nightly export job"
+vega threads                                    # the thread record it wrote
+vega news C0DEMOCHAN1/1700000000.000100         # what fleet says about its tasks
+vega status fuel                                # one read-only fleet view
+vega reply C0DEMOCHAN1/1700000000.000100 "On it." --dry-run   # prints, posts nothing
 ```
 
-Then, with a test config whose `[access]` lists the fake ids below:
+`vega admit` runs the allowlist and writes the thread record exactly as the
+gateway hook does. The intake itself (`topic add`, `add`, `dispatch`) is the
+model's to run through the tools; `tests/test_end_to_end_offline.py` drives the
+whole path with fleet and Hermes stubbed.
 
-```bash
-export VEGA_CONFIG=/path/to/test-vega.toml
-vega relay --user U0DEMOUSER1 --name "Demo Teammate" --channel C0DEMOCHAN1 \
-  --thread-ts 1700000000.000100 --lead-match vega-test-lead \
-  "Please add a retry to the nightly export job"
-thurbox-cli message inbox --for "🧪 vega-test-lead" --all --full   # the relayed line
-vega reply C0DEMOCHAN1/1700000000.000100 "On it." --dry-run       # prints, posts nothing
-thurbox-cli session delete "🧪 vega-test-lead"
-```
-
-- `vega relay` prints the outcome: `relayed`, `refused`, `status` or `failed`.
-  It also prints what Slack would be told.
-- `runtime.dry_run = true` in the config makes every `vega reply` behave as if
-  `--dry-run` were passed.
-- `vega status [status|queue|context]` prints a read-only fleet view, the same
-  one Vega's model reads.
+`scripts/demo_offline.py` goes further: run with the gateway's own Python against
+a throwaway `HERMES_HOME` and a scratch queue (`FLEET_QUEUE_DIR`), it drives the
+real Hermes session store, heartbeat row, restore scan and poll step, and real
+`fleet queue topic add`, `add`, `find`, `show` and `declare`, with only `dispatch`
+(`--dry-run`) and `send` held back. Its docstring says how to run it.
 
 ## Configuration
 
@@ -260,38 +254,36 @@ thurbox-cli session delete "🧪 vega-test-lead"
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `access.users` | `[]` | Slack member ids allowed to talk to Vega |
-| `access.channels` | `[]` | Channel ids where Vega answers, or `["*"]` for any channel it is invited to. 1:1 DMs need only the user |
-| `access.refusal` | polite text | What everyone else is told, at most once per ten minutes |
-| `mission_control.lead_match` | `Mission Control` | Substring that identifies the lead session |
-| `fleet.project` | `~/fleet` | fleet checkout used for the read-only views |
+| `access.channels` | `[]` | Channel ids where Vega answers, or `["*"]` for any channel it is invited to |
+| `fleet.project` | `~/fleet` | The fleet checkout every command runs against |
+| `fleet.repos` | `[]` | Repositories a thread may open a task in |
+| `fleet.fuel_margin` | `10` | Dispatch only at `reserve + margin` or more, fresh |
+| `fleet.fuel_providers` | `[]` | Accounts the gate reads; empty means the first one printed |
+| `origin.heartbeat_interval` | `5m` | How often a thread with open tasks checks for news |
+| `origin.max_sends_per_hour` | `6` | Cap on `vega_send` per task |
+| `runtime.dir` | `~/.local/state/vega` | Thread records, prompts and briefs (mode 600) |
 | `slack.hermes_profile` | `vega` | Profile whose tokens `vega reply` uses |
-| `runtime.dir` | `~/.local/state/vega` | Where long inbound messages are written |
-| `runtime.dry_run` | `false` | `vega reply` prints instead of posting |
-| `status.patterns` | a few regexes | What counts as a status question |
 
-Vega looks for its config in this order:
-
-1. `--config`
-2. `$VEGA_CONFIG`
-3. the Hermes profile home (`$HERMES_HOME/vega.toml`)
-4. `~/.hermes/profiles/vega/vega.toml`
+Vega looks for its config in this order: `--config`, `$VEGA_CONFIG`, the Hermes
+profile home (`$HERMES_HOME/vega.toml`), then `~/.hermes/profiles/vega/vega.toml`.
 
 ## Security notes
 
 - **Refusals only when addressed.** Someone off the allowlist is refused only
   when they DM Vega or @mention it. Their ordinary replies in a thread Vega is
-  part of are dropped silently, so a shared thread stays quiet.
-- **Fails closed.** If the access check raises, for example because
-  `vega.toml` is malformed, the message is dropped. If relaying raises, the
-  person is told nothing was passed on.
-- **Checked twice.** Hermes opens its own allowlist so that strangers can be
-  refused politely. Vega then checks again after admission, and inside both
-  tools.
-- **No commands from Slack.** Nothing from Slack ever reaches a command line
-  except as the `--body` argument of `thurbox-cli message send`. Every
-  subprocess runs without a shell.
-- **Clean output.** Status output has the home directory shortened to `~`
-  before it reaches Slack.
+  part of are dropped silently.
+- **Fails closed.** If the access check raises, the message is dropped.
+- **Checked twice, then again.** Hermes opens its own allowlist so strangers
+  can be refused politely. Vega checks in `pre_gateway_dispatch`, again at
+  admission, and inside every tool.
+- **No commands from Slack.** Nothing from Slack reaches a command line except
+  as a validated ref, slug, branch, title or one-line answer, or inside a file
+  fleet reads. Every subprocess runs without a shell, with a timeout and a
+  stripped environment.
+- **One origin per thread.** A thread can dispatch, read and message only its
+  own tasks.
+- **Clean output.** Tool output has the home directory shortened to `~` before
+  it reaches the model.
 - **Nothing workspace-specific in the repo.** No Slack ids, names or paths are
   committed. They all live in the profile's `vega.toml` and `.env`.
 
@@ -309,11 +301,7 @@ loads inside Hermes' own environment unchanged.
 
 ## Deliberately left for later
 
-- Running Vega on a VPS instead of this machine, with OVH Terraform for the
-  server and Ansible for its setup. That infrastructure belongs in the backend
-  repo, not here.
-- `cloudflared` for any HTTP surface. Socket Mode already needs no inbound port.
-- A Keychain-backed token store. Hermes reads each profile's `.env`, which is
-  the file Hermes itself expects.
-- Mission Control replying on its own schedule to threads it was not asked in,
-  such as broadcasts of landed work.
+- `abandon` and brief edits from the thread. fleet-intake makes them the
+  origin's, but they stay with the operator for now.
+- Running Vega on a VPS. Socket Mode already needs no inbound port.
+- A Keychain-backed token store. Hermes reads each profile's `.env`.

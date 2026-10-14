@@ -1,4 +1,4 @@
-"""Mission Control -> Slack: post into a thread through Vega's own Hermes profile.
+"""Operator -> Slack: post into a thread through Vega's own Hermes profile.
 
 The Slack token lives only in Vega's profile (``.env`` in its ``HERMES_HOME``).
 ``hermes -p <profile> send`` reads it there and calls Slack directly, so fleet never

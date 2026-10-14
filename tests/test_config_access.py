@@ -19,15 +19,30 @@ def test_loads_toml(tmp_path: Path):
     path = tmp_path / "vega.toml"
     path.write_text(
         f'[access]\nusers = ["{USER}"]\nchannels = ["{CHANNEL}"]\n'
-        '[mission_control]\nlead_match = "Lead"\n'
+        '[fleet]\nproject = "~/f"\nrepos = ["~/app", "/srv/web"]\n'
+        'fuel_margin = 15\nfuel_providers = ["claude"]\n'
+        '[origin]\nheartbeat_interval = "90s"\nmax_sends_per_hour = 3\n'
         "[runtime]\ndry_run = true\n"
+        # Relay-era tables are ignored so an old vega.toml keeps working.
+        '[mission_control]\nlead_match = "Lead"\n[status]\npatterns = ["("]\n'
     )
     cfg = config.load(path)
     assert cfg.allowed_users == {USER}
     assert cfg.allowed_channels == {CHANNEL}
-    assert cfg.lead_match == "Lead"
+    assert cfg.fleet_project == Path("~/f").expanduser()
+    assert cfg.repos == (Path("~/app").expanduser(), Path("/srv/web"))
+    assert (cfg.fuel_margin, cfg.fuel_providers) == (15, ("claude",))
+    assert (cfg.heartbeat_seconds, cfg.max_sends_per_hour) == (90, 3)
     assert cfg.dry_run is True
     assert cfg.source == path
+
+
+def test_defaults():
+    cfg = config.from_dict({})
+    assert cfg.heartbeat_seconds == 300
+    assert cfg.fuel_margin == 10 and cfg.fuel_providers == ()
+    assert cfg.repos == () and cfg.max_sends_per_hour == 6
+    assert cfg.max_brief_chars == 20_000
 
 
 @pytest.mark.parametrize(
@@ -37,8 +52,13 @@ def test_loads_toml(tmp_path: Path):
         {"access": {"channels": ["U0123ABC"]}},
         {"access": {"users": "U0123ABC"}},
         {"access": []},
-        {"runtime": {"max_inline_chars": 5}},
-        {"status": {"patterns": ["("]}},
+        {"origin": {"heartbeat_interval": "30s"}},
+        {"origin": {"heartbeat_interval": "soon"}},
+        {"origin": {"max_sends_per_hour": 0}},
+        {"origin": {"max_brief_chars": 10}},
+        {"fleet": {"fuel_margin": -1}},
+        {"fleet": {"fuel_providers": ["bad name"]}},
+        {"fleet": {"repos": "~/app"}},
     ],
 )
 def test_rejects_bad_config(data):
@@ -51,6 +71,7 @@ def test_example_config_parses_and_names_no_ids():
     cfg = config.load(example)
     assert cfg.allowed_users == frozenset()
     assert cfg.allowed_channels == frozenset()
+    assert cfg.repos == ()
 
 
 def test_any_channel_vega_is_in(tmp_path: Path):

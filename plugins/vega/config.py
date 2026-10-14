@@ -1,8 +1,10 @@
-"""Vega's own settings: the allowlist, how to find Mission Control, where fleet lives.
+"""Vega's own settings: the allowlist, where fleet lives, how a thread polls its work.
 
 They live in a TOML file outside the repo (``vega.toml`` in Vega's Hermes profile by
 default) so that no Slack id or machine path is ever committed. ``vega.example.toml``
-at the repo root documents every key and its default.
+at the repo root documents every key and its default. Tables Vega no longer reads
+(``[mission_control]``, ``[status]`` from the relay era) are ignored, not refused, so an
+older ``vega.toml`` keeps working.
 """
 
 from __future__ import annotations
@@ -14,24 +16,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_PROFILE = "vega"
-DEFAULT_LEAD_MATCH = "Mission Control"
 DEFAULT_REFUSAL = (
     "Sorry, I only take requests from people and channels on my allowlist. "
     "Ask the fleet operator to add you if you need access."
 )
-DEFAULT_ACK = "Passed to Mission Control. It will answer in this thread."
-DEFAULT_STATUS_PATTERNS = (
-    r"\bwhat'?s (running|in flight|going on|happening)\b",
-    r"\bwhat is (running|in flight|going on|happening)\b",
-    r"^\s*status\??\s*$",
-    r"\b(fleet|queue) status\b",
-    r"\bstatus of the (fleet|queue)\b",
-    r"\bwhat'?s (in )?the queue\b",
-)
+DEFAULT_HEARTBEAT_INTERVAL = "5m"
+MIN_HEARTBEAT_SECONDS = 60
+DEFAULT_FUEL_MARGIN = 10
+DEFAULT_MAX_SENDS_PER_HOUR = 6
+DEFAULT_MAX_BRIEF_CHARS = 20_000
 
 ANY_CHANNEL = "*"
 USER_ID_RE = re.compile(r"^[UW][A-Z0-9]{2,}$")
 CHANNEL_ID_RE = re.compile(r"^[CGD][A-Z0-9]{2,}$")
+_INTERVAL_RE = re.compile(r"^\s*(\d+)\s*(s|m|h)\s*$")
 
 
 class ConfigError(ValueError):
@@ -43,17 +41,22 @@ class VegaConfig:
     allowed_users: frozenset[str] = frozenset()
     allowed_channels: frozenset[str] = frozenset()
     refusal: str = DEFAULT_REFUSAL
-    lead_match: str = DEFAULT_LEAD_MATCH
-    ack: str = DEFAULT_ACK
-    reply_hint: bool = True
     fleet_project: Path = field(default_factory=lambda: Path("~/fleet").expanduser())
+    # Repositories a task may name, as resolved paths. Empty means no task can be added.
+    repos: tuple[Path, ...] = ()
+    # Dispatch only when every gated provider reads at least reserve + margin, fresh.
+    fuel_margin: int = DEFAULT_FUEL_MARGIN
+    # Providers the gate reads; empty means the first account `fleet status --fuel`
+    # prints, which is the checkout's own.
+    fuel_providers: tuple[str, ...] = ()
     hermes_profile: str = DEFAULT_PROFILE
     runtime_dir: Path = field(
         default_factory=lambda: Path("~/.local/state/vega").expanduser()
     )
-    max_inline_chars: int = 400
     dry_run: bool = False
-    status_patterns: tuple[str, ...] = DEFAULT_STATUS_PATTERNS
+    heartbeat_seconds: int = 300
+    max_sends_per_hour: int = DEFAULT_MAX_SENDS_PER_HOUR
+    max_brief_chars: int = DEFAULT_MAX_BRIEF_CHARS
     source: Path | None = None
 
 
@@ -94,11 +97,10 @@ def load(path: Path | None = None) -> VegaConfig:
 
 def from_dict(data: dict, source: Path | None = None) -> VegaConfig:
     access = _table(data, "access")
-    mc = _table(data, "mission_control")
     fleet = _table(data, "fleet")
     slack = _table(data, "slack")
     runtime = _table(data, "runtime")
-    status = _table(data, "status")
+    origin = _table(data, "origin")
 
     users = _ids(access.get("users", []), USER_ID_RE, "access.users")
     raw_channels = access.get("channels", [])
@@ -107,32 +109,51 @@ def from_dict(data: dict, source: Path | None = None) -> VegaConfig:
         channels = frozenset({ANY_CHANNEL})
     else:
         channels = _ids(raw_channels, CHANNEL_ID_RE, "access.channels")
-    max_inline = int(runtime.get("max_inline_chars", 400))
-    if max_inline < 40:
-        raise ConfigError("runtime.max_inline_chars must be at least 40")
-    patterns = tuple(status.get("patterns", DEFAULT_STATUS_PATTERNS))
-    for pattern in patterns:
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            raise ConfigError(f"status.patterns: {pattern!r}: {exc}") from exc
 
     defaults = VegaConfig()
     return VegaConfig(
         allowed_users=users,
         allowed_channels=channels,
         refusal=str(access.get("refusal", DEFAULT_REFUSAL)),
-        lead_match=str(mc.get("lead_match", DEFAULT_LEAD_MATCH)),
-        ack=str(mc.get("ack", DEFAULT_ACK)),
-        reply_hint=bool(mc.get("reply_hint", True)),
         fleet_project=_path(fleet.get("project"), defaults.fleet_project),
+        repos=_paths(fleet.get("repos", []), "fleet.repos"),
+        fuel_margin=_int(
+            fleet.get("fuel_margin", DEFAULT_FUEL_MARGIN), "fleet.fuel_margin", 0
+        ),
+        fuel_providers=_names(fleet.get("fuel_providers", []), "fleet.fuel_providers"),
         hermes_profile=str(slack.get("hermes_profile", DEFAULT_PROFILE)),
         runtime_dir=_path(runtime.get("dir"), defaults.runtime_dir),
-        max_inline_chars=max_inline,
         dry_run=bool(runtime.get("dry_run", False)),
-        status_patterns=patterns,
+        heartbeat_seconds=parse_interval(
+            str(origin.get("heartbeat_interval", DEFAULT_HEARTBEAT_INTERVAL))
+        ),
+        max_sends_per_hour=_int(
+            origin.get("max_sends_per_hour", DEFAULT_MAX_SENDS_PER_HOUR),
+            "origin.max_sends_per_hour",
+            1,
+        ),
+        max_brief_chars=_int(
+            origin.get("max_brief_chars", DEFAULT_MAX_BRIEF_CHARS),
+            "origin.max_brief_chars",
+            500,
+        ),
         source=source,
     )
+
+
+def parse_interval(text: str) -> int:
+    """``5m`` / ``90s`` / ``1h`` -> seconds, at least :data:`MIN_HEARTBEAT_SECONDS`."""
+    match = _INTERVAL_RE.match(text)
+    if not match:
+        raise ConfigError(
+            f"origin.heartbeat_interval: {text!r} is not an interval like 5m, 90s or 1h"
+        )
+    seconds = int(match.group(1)) * {"s": 1, "m": 60, "h": 3600}[match.group(2)]
+    if seconds < MIN_HEARTBEAT_SECONDS:
+        raise ConfigError(
+            f"origin.heartbeat_interval must be at least {MIN_HEARTBEAT_SECONDS}s"
+        )
+    return seconds
 
 
 def _table(data: dict, name: str) -> dict:
@@ -152,6 +173,34 @@ def _ids(values: object, pattern: re.Pattern[str], key: str) -> frozenset[str]:
             raise ConfigError(f"{key}: {text!r} does not look like a Slack id")
         out.add(text)
     return frozenset(out)
+
+
+def _names(values: object, key: str) -> tuple[str, ...]:
+    if not isinstance(values, list):
+        raise ConfigError(f"{key} must be a list of names")
+    out = []
+    for value in values:
+        text = str(value).strip()
+        if not re.match(r"^[a-z0-9][a-z0-9_.-]*$", text):
+            raise ConfigError(f"{key}: {text!r} is not a provider name")
+        out.append(text)
+    return tuple(out)
+
+
+def _paths(values: object, key: str) -> tuple[Path, ...]:
+    if not isinstance(values, list):
+        raise ConfigError(f"{key} must be a list of paths")
+    return tuple(Path(str(v)).expanduser() for v in values if str(v).strip())
+
+
+def _int(value: object, key: str, floor: int) -> int:
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{key} must be a whole number") from exc
+    if number < floor:
+        raise ConfigError(f"{key} must be at least {floor}")
+    return number
 
 
 def _path(value: object, default: Path) -> Path:

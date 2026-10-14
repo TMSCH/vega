@@ -1,6 +1,6 @@
 name: vega
-version: 0.1.0
-description: "Slack front door to fleet's Mission Control: relays teammates' requests to the lead session and answers status questions read-only."
+version: 0.2.0
+description: "Slack front door to fleet: each Slack thread is its own fleet origin. Allowlist gate, intake tools, heartbeat-driven news back into the thread."
 hermes_requires: ">=0.21.0"
 
 # Exactly what `hermes profile install` copies into the profile. The repo also
