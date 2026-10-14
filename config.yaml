@@ -11,10 +11,19 @@ plugins:
 
 # Vega's model runs fleet's intake for its Slack thread through Vega's own
 # tools and nothing else: no terminal, no files, no web. Every fleet command
-# is a fixed argv built by the plugin, with the origin set by code.
+# is a fixed argv built by the plugin, with the origin set by code. The skills
+# toolset is there so skills reach the model at all (Hermes injects none
+# without it); the vega plugin refuses its one write tool, skill_manage.
 platform_toolsets:
-  slack: [vega]
-  cli: [vega]
+  slack: [vega, skills]
+  cli: [vega, skills]
+
+skills:
+  # Loaded in full into every session. intake-guidelines is the operator's own
+  # skill (~/.hermes/profiles/vega/skills/intake-guidelines/SKILL.md): which
+  # repository, branch, agent and publish method fit which request. Vega ships
+  # none of that; until it exists Hermes logs it as missing and skips it.
+  auto_load: [fleet-origin, intake-guidelines]
 
 slack:
   # Channels: answer only when @mentioned; replies in an existing thread need none.

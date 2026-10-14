@@ -6,10 +6,15 @@ fleet origin**: the Hermes conversation behind the thread takes the request,
 opens the topic and its tasks, starts them when fuel allows, and reports back in
 the same thread as the work moves. No lead session sits in between.
 
-- **Intake from the thread.** Vega's model runs fleet's intake with narrow
-  plugin tools: `vega_topic_add`, `vega_task_add`, `vega_dispatch`. Every fleet
+- **Intake from the thread, fast.** Dispatching is Vega's main job: a request
+  goes to topic, tasks and dispatch in the same turn, with a question only when
+  the request is unclear. Vega's model runs fleet's intake with narrow plugin
+  tools: `vega_topic_add`, `vega_task_add`, `vega_dispatch`. Every fleet
   command is a fixed argv built in code; the origin `slack:<channel>/<thread_ts>`
   is set by the plugin, never by the model.
+- **The operator's intake guidelines.** Which repository, branch, agent and
+  publish method fit which request is the operator's knowledge, written as an
+  `intake-guidelines` skill in the profile (setup step 5). Vega ships none of it.
 - **News by polling, not by push.** Once a thread has tasks, the conversation
   gets a Hermes heartbeat. Each tick calls `vega_fleet_news`, which reads
   fleet's own records (`find --origin`, `show`, the task's `progress.jsonl`),
@@ -86,7 +91,7 @@ tool says so.
 **What the model can and cannot put on a command line.** Refs, slugs and
 branches are matched against regexes; titles and answers are one line that
 cannot start with `-`; the repository must be in `fleet.repos`; `publish` is an
-enum. The brief is written by the plugin from four sections, size-capped, to a
+enum; an `agent` must be registered in thurbox (`thurbox-cli agent launch-args`). The brief is written by the plugin from four sections, size-capped, to a
 mode-600 file. Every subprocess runs without a shell, with a timeout, and with
 `SLACK_*`, `THURBOX_SESSION` and `THURBOX_TASK` dropped from its environment,
 so a task can never record the gateway's launcher as its origin.
@@ -94,7 +99,8 @@ so a task can never record the gateway's launcher as its origin.
 **What Vega never does.** It never runs `abandon`, `block`, bare `dispatch` or
 anything touching another origin's tasks. `vega_send` accepts only refs that
 `find --origin` lists for this thread, at most `origin.max_sends_per_hour` per
-task. There is no file, terminal or web tool.
+task. There is no file, terminal or web tool; the skills toolset reads skills
+and its write tool, `skill_manage`, is refused.
 
 ## Repository layout
 
@@ -110,7 +116,7 @@ exactly the paths named in `distribution.yaml` into a `vega` profile.
 | `plugins/vega/origin.py` | Thread records, topic prompts, briefs, the dispatch gate, the news diff |
 | `plugins/vega/heartbeat.py` | The one module that knows how a heartbeat is armed from a plugin |
 | `plugins/vega/fleet.py` | Every fleet argv Vega runs, and the checks on model-supplied values |
-| `skills/` | `fleet-origin` (points at fleet's `fleet-intake`) and `fleet-status` |
+| `skills/` | `fleet-origin` (points at fleet's `fleet-intake`) and `fleet-status`. The operator's `intake-guidelines` skill lives in the profile, not here |
 | `slack/manifest.yaml` | Slack app manifest: Socket Mode, minimum scopes |
 | `vega.example.toml` | Every Vega setting with its default. The real `vega.toml` is never committed |
 | `scripts/install.sh` | Installs or updates the profile, seeds `vega.toml`, installs the `vega` command |
@@ -120,7 +126,7 @@ exactly the paths named in `distribution.yaml` into a `vega` profile.
 
 ## Setup: what the operator does next
 
-Steps 2 to 6 need the Slack workspace and its tokens. Only the operator can do
+Steps 2 to 7 need the Slack workspace and its tokens. Only the operator can do
 them; nothing in this repo creates the app or posts to Slack.
 
 ### 1. Install Hermes and Vega
@@ -140,6 +146,12 @@ scripts/install.sh
 - Installs the `vega` command with `uv tool install`.
 
 It never touches another Hermes profile.
+
+`hermes profile update` keeps an existing profile's `config.yaml`. A profile
+installed before skills were enabled needs the new `platform_toolsets` and
+`skills.auto_load` from this repo's `config.yaml` copied in by hand, or
+`hermes profile update vega --force-config` (which also drops your local edits
+to it, such as the admin ids from step 4).
 
 ### 2. Create the Slack app from the manifest
 
@@ -196,13 +208,44 @@ hermes -p vega config set platforms.slack.extra.allow_admin_from '["U…your id�
 hermes -p vega config set platforms.slack.extra.user_allowed_commands '[]'
 ```
 
-### 5. Pick Vega's model
+### 5. Write your intake guidelines
+
+Vega knows how to run fleet's intake, not how *your* fleet should take work.
+Write that down as a skill named `intake-guidelines` in the profile:
+
+```bash
+mkdir -p ~/.hermes/profiles/vega/skills/intake-guidelines
+${EDITOR:-vi} ~/.hermes/profiles/vega/skills/intake-guidelines/SKILL.md
+```
+
+```markdown
+---
+name: intake-guidelines
+description: How this fleet takes work from Slack - which repository, branch, agent and publish method fit which request.
+---
+
+# Intake guidelines
+
+- Bugs and features in the app: repo `~/app`, branch `fix/<slug>` or
+  `feat/<slug>`, agent `claude-coder`.
+- "Why is X failing": agent `claude-debugger`, publish `note`.
+- Infrastructure changes: agent `codex-operator`; one task per host.
+```
+
+`config.yaml` auto-loads it into every session, beside `fleet-origin`, and Vega
+follows it over its own judgement; it never overrides a tool's refusal. Until it
+exists, Hermes logs it as missing and Vega falls back to asking when a request
+is unclear. It is yours: `install.sh` and `hermes profile update` keep skills
+they did not ship. Agent names in it must be registered in thurbox
+(`~/.config/thurbox/agents.toml`); `vega_task_add` refuses any other.
+
+### 6. Pick Vega's model
 
 ```bash
 hermes -p vega model      # any provider Hermes supports
 ```
 
-### 6. Start Vega
+### 7. Start Vega
 
 ```bash
 scripts/run.sh            # foreground: `hermes gateway run`, which serves the vega profile
@@ -215,7 +258,7 @@ included. `hermes -p vega gateway status` shows whether Vega is being served.
 
 Then invite `@Vega` to an allowlisted channel and ask it for something there.
 
-### 7. What fleet needs
+### 8. What fleet needs
 
 Nothing. The origin tools run `uv run --project <fleet.project> fleet …` from
 the gateway's own process, which needs only `uv` and `thurbox-cli` on its
@@ -269,8 +312,8 @@ real Hermes session store, heartbeat row, restore scan and poll step, and real
 Any other table or key is refused at load time.
 
 No agent name lives in Vega or `vega.toml`. `vega_task_add` takes an optional
-`agent` when the operator's own instructions (a skill in the Hermes profile) say
-which thurbox agent fits a request; Vega passes it as `fleet queue add --agent`
+`agent` when the operator's `intake-guidelines` skill (step 5) says which
+thurbox agent fits a request; Vega passes it as `fleet queue add --agent`
 only after `thurbox-cli agent launch-args <name> --json` confirms thurbox has it
 registered. Without one, no `--agent` is passed and fleet's default applies
 (`AGENT=` in its `orchestration/agent.conf`, else thurbox's).
@@ -291,6 +334,10 @@ profile home (`$HERMES_HOME/vega.toml`), then `~/.hermes/profiles/vega/vega.toml
   as a validated ref, slug, branch, title, registered agent name or one-line
   answer, or inside a file fleet reads. Every subprocess runs without a shell,
   with a timeout and a stripped environment.
+- **Skills are read-only.** The skills toolset is enabled so skills reach the
+  model (Hermes injects none without it). Its write tool, `skill_manage`, is
+  refused by Vega's `pre_tool_call` hook, so no Slack message can make Vega
+  write or edit a skill.
 - **One origin per thread.** A thread can dispatch, read and message only its
   own tasks.
 - **Clean output.** Tool output has the home directory shortened to `~` before

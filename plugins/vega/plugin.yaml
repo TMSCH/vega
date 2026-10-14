@@ -5,6 +5,7 @@ manifest_version: 2
 provides_hooks:
   - pre_gateway_dispatch
   - post_gateway_admission
+  - pre_tool_call
 provides_tools:
   - vega_fleet_status
   - vega_show

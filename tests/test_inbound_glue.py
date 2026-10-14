@@ -430,7 +430,11 @@ def test_register_wires_two_hooks_and_the_tools():
     import vega
 
     vega.register(Ctx())
-    assert seen["hooks"] == ["pre_gateway_dispatch", "post_gateway_admission"]
+    assert seen["hooks"] == [
+        "pre_gateway_dispatch",
+        "post_gateway_admission",
+        "pre_tool_call",
+    ]
     assert seen["tools"] == [
         "vega_fleet_status",
         "vega_show",
@@ -441,6 +445,24 @@ def test_register_wires_two_hooks_and_the_tools():
         "vega_send",
         "vega_fleet_news",
     ]
+
+
+def test_skill_manage_is_refused_and_every_other_tool_runs():
+    from vega import hermes_glue
+
+    blocked = hermes_glue.pre_tool_call(tool_name="skill_manage", args={})
+    assert blocked["action"] == "block" and "read-only" in blocked["message"]
+    for name in ("skill_view", "skills_list", "vega_task_add"):
+        assert hermes_glue.pre_tool_call(tool_name=name, args={}) is None
+
+
+def test_config_loads_the_skills_and_keeps_the_toolsets_narrow():
+    from pathlib import Path
+
+    text = Path(__file__).parent.parent.joinpath("config.yaml").read_text()
+    assert "  slack: [vega, skills]\n" in text
+    assert "  cli: [vega, skills]\n" in text
+    assert "  auto_load: [fleet-origin, intake-guidelines]\n" in text
 
 
 def test_plugin_manifest_lists_every_tool():
