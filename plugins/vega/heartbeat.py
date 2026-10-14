@@ -23,11 +23,12 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 PROMPT = (
-    "Fleet check for this Slack thread. Call vega_fleet_news once. For every item it "
-    "returns, post one short plain line in this thread: shipped with the pull request "
-    "link, landed, abandoned and why, or a worker's question. Answer a worker with "
-    "vega_send only when the answer is already in this thread; otherwise ask the "
-    "person. If it returns no news, reply exactly NO_REPLY."
+    "Fleet check for this Slack thread. Call vega_fleet_news once and post each line "
+    "it returns in this thread, in plain words: a task finished with the worker's "
+    "result, shipped with the pull request link, landed, abandoned and why, or a "
+    "worker's question. Keep the result's numbers and facts exactly as given. Answer "
+    "a worker with vega_send only when the answer is already in this thread; "
+    "otherwise ask the person. If it returns no news, reply exactly NO_REPLY."
 )
 
 

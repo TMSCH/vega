@@ -331,6 +331,80 @@ def test_news_reports_each_change_once(cfg, fake, tmp_path):
     assert ["queue", "show", ref] not in fake.fleet_calls()[-1:]
 
 
+def test_news_carries_an_answer_only_result_once(cfg, fake, tmp_path):
+    """A task that ends without a pull request is 'finished' with its result body."""
+    ref = "t/01-count"
+    thread = Thread(CHANNEL, TS, tasks={ref: {"state": "dispatched"}})
+    brief = progress(tmp_path, ref, [])
+    result = Path(brief).parent / "result.md"
+    result.write_text(
+        "---\noutcome: not-applicable\nlearned:\n  - fact: secret\n---\n"
+        "**4,140 users** signed up in the window.\nNo data modified.\n"
+    )
+    fake.shows[ref] = show_text(
+        ref, state="done", outcome="not-applicable", brief=brief, result=str(result)
+    )
+    out = origin.news(cfg, thread, fake)
+    (event,) = out["news"]
+    assert event["kind"] == "finished"
+    body = "**4,140 users** signed up in the window.\nNo data modified."
+    assert event["result"] == body
+    assert "secret" not in event["result"]
+    (line,) = origin.render_news(out["news"])
+    assert line.startswith(f"{ref} (Fix the thing): finished.\n**4,140 users**")
+    assert not out["done"] and thread.tasks[ref]["result_told"]
+    # The reaper lands it: nothing to merge, nothing new to say.
+    fake.shows[ref] = show_text(
+        ref, state="landed", outcome="not-applicable", brief=brief, result=str(result)
+    )
+    out = origin.news(cfg, thread, fake)
+    assert out == {"news": [], "open": [], "done": True}
+
+
+def test_news_reports_an_answer_only_task_that_landed_at_once(cfg, fake, tmp_path):
+    ref = "t/01-count"
+    thread = Thread(CHANNEL, TS, tasks={ref: {"state": "queued"}})
+    brief = progress(tmp_path, ref, [])
+    (Path(brief).parent / "result.md").write_text("The answer is 42.\n")
+    fake.shows[ref] = show_text(
+        ref, state="landed", outcome="not-applicable", brief=brief
+    )
+    out = origin.news(cfg, thread, fake)
+    assert [e["kind"] for e in out["news"]] == ["finished"] and out["done"]
+    assert out["news"][0]["result"] == "The answer is 42."
+    assert "merged" not in origin.render_news(out["news"])[0]
+
+
+def test_news_attaches_the_result_to_shipped_then_not_again(cfg, fake, tmp_path):
+    ref = "t/01-a"
+    thread = Thread(CHANNEL, TS, tasks={ref: {"state": "dispatched"}})
+    brief = progress(tmp_path, ref, [])
+    (Path(brief).parent / "result.md").write_text("---\no: 1\n---\nAdded it.\n")
+    url = "https://example.test/pr/7"
+    fake.shows[ref] = show_text(
+        ref, state="done", outcome="shipped", artifact=url, brief=brief
+    )
+    out = origin.news(cfg, thread, fake)
+    told = [(e["kind"], e.get("result")) for e in out["news"]]
+    assert told == [("shipped", "Added it.")]
+    fake.shows[ref] = show_text(
+        ref, state="landed", outcome="shipped", artifact=url, brief=brief
+    )
+    out = origin.news(cfg, thread, fake)
+    assert [(e["kind"], e.get("result")) for e in out["news"]] == [("landed", None)]
+
+
+def test_result_body_is_capped_and_scrubbed(tmp_path):
+    from vega import fleet as fleet_mod
+
+    path = tmp_path / "result.md"
+    path.write_text("x" * 5000)
+    body = fleet_mod.result_body({"result": str(path)}, limit=100)
+    assert body.startswith("x" * 100) and body.endswith("the full result is in fleet)")
+    assert fleet_mod.result_body({"brief": str(tmp_path / "other" / "BRIEF.md")}) == ""
+    assert fleet_mod.result_body({}) == ""
+
+
 def test_news_reports_abandonment_and_a_pull_request_before_shipping(
     cfg, fake, tmp_path
 ):

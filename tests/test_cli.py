@@ -76,4 +76,4 @@ def test_status_show_and_config(monkeypatch, capsys, conf):
     assert cli.main(["--config", str(conf), "show", "nope"]) == 2
     assert cli.main(["--config", str(conf), "config"]) == 0
     out = capsys.readouterr().out
-    assert "heartbeat every:  300s" in out and "fleet.repos is empty" in out
+    assert "heartbeat every:  60s" in out and "fleet.repos is empty" in out

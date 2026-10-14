@@ -37,8 +37,10 @@ channels = []
 
 [origin]
 # How often a thread with open tasks checks fleet's records and posts news
-# (shipped, landed, abandoned, a worker's question). At least 60s.
-# heartbeat_interval = "5m"
+# (finished with the result, shipped, landed, abandoned, a worker's question).
+# At least 60s. A tick with no news is one cheap, cached model call, so a short
+# interval is what makes a two-minute task answer in about two minutes.
+# heartbeat_interval = "1m"
 # How many times per hour a thread may answer one worker with `fleet queue send`.
 # max_sends_per_hour = 6
 # The largest brief a thread may write for a task, in characters.

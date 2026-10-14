@@ -14,8 +14,10 @@ the same thread as the work moves. No lead session sits in between.
   gets a Hermes heartbeat. Each tick calls `vega_fleet_news`, which reads
   fleet's own records (`find --origin`, `show`, the task's `progress.jsonl`),
   diffs them against what the thread was already told, and returns only what
-  is new: started, pull request opened, shipped with the link, landed,
-  abandoned and why, a worker's question. With nothing new the turn ends with
+  is new: started, pull request opened, finished with the worker's result,
+  shipped with the link, landed, abandoned and why, a worker's question. A
+  task that ends without a pull request (an answer, a report) is reported as
+  finished with its `result.md` body, once. With nothing new the turn ends with
   `NO_REPLY`, which posts nothing. When every task has landed or been
   abandoned, the heartbeat is cleared.
 - **Status questions.** `vega_fleet_status`, `vega_find` and `vega_show` read
@@ -259,7 +261,7 @@ real Hermes session store, heartbeat row, restore scan and poll step, and real
 | `fleet.repos` | `[]` | Repositories a thread may open a task in |
 | `fleet.fuel_margin` | `10` | Dispatch only at `reserve + margin` or more, fresh |
 | `fleet.fuel_providers` | `[]` | Accounts the gate reads; empty means the first one printed |
-| `origin.heartbeat_interval` | `5m` | How often a thread with open tasks checks for news |
+| `origin.heartbeat_interval` | `1m` | How often a thread with open tasks checks for news |
 | `origin.max_sends_per_hour` | `6` | Cap on `vega_send` per task |
 | `runtime.dir` | `~/.local/state/vega` | Thread records, prompts and briefs (mode 600) |
 

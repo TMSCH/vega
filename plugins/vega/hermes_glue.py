@@ -369,7 +369,8 @@ def _news(cfg: config.VegaConfig, args: dict) -> dict:
     else:
         out.update(_arm_heartbeat(cfg, thread))
         out["instruction"] = (
-            "Post each line above in this thread, in plain words. "
+            "Post each line above in this thread, in plain words; a result's numbers "
+            "and facts stay exactly as given. "
             if out["news"]
             else "Nothing changed: reply exactly NO_REPLY."
         )
@@ -510,9 +511,9 @@ NEWS_SCHEMA = {
     "name": "vega_fleet_news",
     "description": (
         "What changed for this thread's tasks since the thread was last told: started, "
-        "shipped with the pull request link, landed, abandoned and why, a worker's "
-        "question. Returns only news, with the lines to post; an empty list means "
-        "nothing changed."
+        "finished with the worker's result, shipped with the pull request link, "
+        "landed, abandoned and why, a worker's question. Returns only news, with the "
+        "lines to post; an empty list means nothing changed."
     ),
     "parameters": {"type": "object", "properties": {}},
 }

@@ -37,6 +37,7 @@ def show_text(
     abandoned: str = "",
     brief: str = "",
     title: str = "Fix the thing",
+    result: str = "",
 ) -> str:
     lines = [
         f"{ref} — {title}",
@@ -54,6 +55,8 @@ def show_text(
         lines.append(f"    abandoned:   {abandoned}")
     if brief:
         lines.append(f"    brief:       {brief}")
+    if result:
+        lines.append(f"    result:      {result}")
     return "\n".join(lines) + "\n"
 
 
