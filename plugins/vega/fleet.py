@@ -27,6 +27,7 @@ VIEWS: dict[str, tuple[str, ...]] = {
 }
 VIEW_TIMEOUT = 90
 MAX_OUTPUT_CHARS = 3500
+MAX_RESULT_CHARS = 2500
 # What a fleet child must not inherit: Vega's Slack tokens, and thurbox's session
 # markers, which `fleet queue add` would otherwise record as the origin.
 DROP_ENV = ("SLACK_*", "THURBOX_SESSION", "THURBOX_TASK")
@@ -319,3 +320,37 @@ def progress_path(record: dict) -> Path | None:
     if not brief or not isinstance(brief, str):
         return None
     return Path(brief).parent / "progress.jsonl"
+
+
+def result_path(record: dict) -> Path | None:
+    """The worker's result.md: the path ``show`` names, else beside the brief."""
+    named = record.get("result")
+    if named and isinstance(named, str):
+        return Path(named)
+    brief = record.get("brief")
+    if not brief or not isinstance(brief, str):
+        return None
+    return Path(brief).parent / "result.md"
+
+
+_FRONT_MATTER = re.compile(r"\A---\n.*?\n---\n", re.S)
+
+
+def result_body(record: dict, limit: int = MAX_RESULT_CHARS) -> str:
+    """What the worker wrote for the person, without the YAML front matter.
+
+    Empty when there is no result yet. Capped at ``limit`` characters, because it
+    is posted into a Slack thread.
+    """
+    path = result_path(record)
+    if path is None or not path.is_file():
+        return ""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    body = _FRONT_MATTER.sub("", text, count=1).strip()
+    body = scrub(body)
+    if len(body) > limit:
+        body = body[:limit].rstrip() + "\n… (truncated; the full result is in fleet)"
+    return body

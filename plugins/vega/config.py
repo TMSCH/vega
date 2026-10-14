@@ -22,7 +22,7 @@ DEFAULT_REFUSAL = (
     "Sorry, I only take requests from people and channels on my allowlist. "
     "Ask the fleet operator to add you if you need access."
 )
-DEFAULT_HEARTBEAT_INTERVAL = "5m"
+DEFAULT_HEARTBEAT_INTERVAL = "1m"
 MIN_HEARTBEAT_SECONDS = 60
 DEFAULT_FUEL_MARGIN = 10
 DEFAULT_MAX_SENDS_PER_HOUR = 6
@@ -64,7 +64,7 @@ class VegaConfig:
     runtime_dir: Path = field(
         default_factory=lambda: Path("~/.local/state/vega").expanduser()
     )
-    heartbeat_seconds: int = 300
+    heartbeat_seconds: int = 60
     max_sends_per_hour: int = DEFAULT_MAX_SENDS_PER_HOUR
     max_brief_chars: int = DEFAULT_MAX_BRIEF_CHARS
     source: Path | None = None

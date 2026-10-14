@@ -38,7 +38,7 @@ def test_loads_toml(tmp_path: Path):
 
 def test_defaults():
     cfg = config.from_dict({})
-    assert cfg.heartbeat_seconds == 300
+    assert cfg.heartbeat_seconds == 60
     assert cfg.fuel_margin == 10 and cfg.fuel_providers == ()
     assert cfg.repos == () and cfg.max_sends_per_hour == 6
     assert cfg.max_brief_chars == 20_000
