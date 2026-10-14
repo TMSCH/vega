@@ -2,7 +2,7 @@
 # Install or update Vega on this machine:
 #   1. the Hermes profile `vega` (SOUL.md, config.yaml, skills, the vega plugin),
 #   2. vega.toml in that profile from vega.example.toml, if there is none yet,
-#   3. the `vega` command (for `vega reply`, `vega admit`, `vega status`, `vega news`).
+#   3. the `vega` command (`vega config`, `vega admit`, `vega status`, `vega news`).
 # It never touches any other Hermes profile and never writes a token.
 set -euo pipefail
 

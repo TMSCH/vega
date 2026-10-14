@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -22,9 +23,7 @@ def test_loads_toml(tmp_path: Path):
         '[fleet]\nproject = "~/f"\nrepos = ["~/app", "/srv/web"]\n'
         'fuel_margin = 15\nfuel_providers = ["claude"]\n'
         '[origin]\nheartbeat_interval = "90s"\nmax_sends_per_hour = 3\n'
-        "[runtime]\ndry_run = true\n"
-        # Relay-era tables are ignored so an old vega.toml keeps working.
-        '[mission_control]\nlead_match = "Lead"\n[status]\npatterns = ["("]\n'
+        '[runtime]\ndir = "~/state"\n'
     )
     cfg = config.load(path)
     assert cfg.allowed_users == {USER}
@@ -33,7 +32,7 @@ def test_loads_toml(tmp_path: Path):
     assert cfg.repos == (Path("~/app").expanduser(), Path("/srv/web"))
     assert (cfg.fuel_margin, cfg.fuel_providers) == (15, ("claude",))
     assert (cfg.heartbeat_seconds, cfg.max_sends_per_hour) == (90, 3)
-    assert cfg.dry_run is True
+    assert cfg.runtime_dir == Path("~/state").expanduser()
     assert cfg.source == path
 
 
@@ -64,6 +63,34 @@ def test_defaults():
 def test_rejects_bad_config(data):
     with pytest.raises(config.ConfigError):
         config.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    ("data", "named"),
+    [
+        # A typo must not silently leave the allowlist empty.
+        ({"acces": {"users": [USER]}}, "[acces]"),
+        ({"access": {"user": [USER]}}, "access.user"),
+        # Tables and keys from earlier designs are refused, not ignored.
+        ({"mission_control": {"lead_match": "Lead"}}, "[mission_control]"),
+        ({"status": {"patterns": []}}, "[status]"),
+        ({"slack": {"hermes_profile": "vega"}}, "[slack]"),
+        ({"runtime": {"dry_run": True}}, "runtime.dry_run"),
+    ],
+)
+def test_rejects_unknown_tables_and_keys(data, named):
+    with pytest.raises(config.ConfigError, match=re.escape(named)):
+        config.from_dict(data)
+
+
+def test_schema_matches_the_dataclass():
+    """Every schema key is read by from_dict; the example file exercises them all."""
+    example = Path(__file__).parents[1] / "vega.example.toml"
+    text = example.read_text()
+    for table, keys in config.SCHEMA.items():
+        assert f"[{table}]" in text
+        for key in keys:
+            assert re.search(rf"^#? ?{key} = ", text, re.M), f"{table}.{key}"
 
 
 def test_example_config_parses_and_names_no_ids():

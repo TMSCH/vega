@@ -163,9 +163,8 @@ SLACK_ALLOW_ALL_USERS=true
 ```
 
 Hermes prefers a `SLACK_BOT_TOKEN` or `SLACK_APP_TOKEN` from the process
-environment over the profile's `.env`. `scripts/run.sh` and `vega reply` strip
-those variables before starting Hermes. If you start the gateway any other way,
-do the same.
+environment over the profile's `.env`. `scripts/run.sh` strips those variables
+before starting Hermes. If you start the gateway any other way, do the same.
 
 ### 4. Fill in the allowlist and the repositories
 
@@ -182,7 +181,9 @@ repos = ["~/app"]      # repositories a thread may open a task in; empty refuses
 ```
 
 Check the result with `vega config`. With an empty allowlist, Vega refuses
-everyone; with an empty `repos`, every `vega_task_add` is refused.
+everyone; with an empty `repos`, every `vega_task_add` is refused. The file's
+schema is closed: a table or key Vega does not read is an error, so a misspelt
+`[acces]` cannot silently leave the allowlist empty.
 
 Also restrict Hermes' own slash commands, such as `/model` and `/reset`, to
 yourself. The ids belong in the profile, not the repo:
@@ -233,7 +234,6 @@ vega admit --user U0DEMOUSER1 --name "Demo Teammate" --channel C0DEMOCHAN1 \
 vega threads                                    # the thread record it wrote
 vega news C0DEMOCHAN1/1700000000.000100         # what fleet says about its tasks
 vega status fuel                                # one read-only fleet view
-vega reply C0DEMOCHAN1/1700000000.000100 "On it." --dry-run   # prints, posts nothing
 ```
 
 `vega admit` runs the allowlist and writes the thread record exactly as the
@@ -262,7 +262,8 @@ real Hermes session store, heartbeat row, restore scan and poll step, and real
 | `origin.heartbeat_interval` | `5m` | How often a thread with open tasks checks for news |
 | `origin.max_sends_per_hour` | `6` | Cap on `vega_send` per task |
 | `runtime.dir` | `~/.local/state/vega` | Thread records, prompts and briefs (mode 600) |
-| `slack.hermes_profile` | `vega` | Profile whose tokens `vega reply` uses |
+
+Any other table or key is refused at load time.
 
 Vega looks for its config in this order: `--config`, `$VEGA_CONFIG`, the Hermes
 profile home (`$HERMES_HOME/vega.toml`), then `~/.hermes/profiles/vega/vega.toml`.

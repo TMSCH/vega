@@ -5,51 +5,8 @@ from pathlib import Path
 import pytest
 from vega import fleet
 from vega.fleet import FleetError, FuelAccount
-from vega.reply import ReplyError, Target, parse_target, post
 
-from .conftest import CHANNEL, FUEL_LOW, FUEL_OK, ORIGIN, TS, FakeRunner, show_text
-
-# --- vega reply (the operator's escape hatch) -----------------------------------------
-
-
-def test_parse_target():
-    assert parse_target(f" {CHANNEL}/{TS} ") == Target(CHANNEL, TS)
-
-
-@pytest.mark.parametrize(
-    "raw", ["", CHANNEL, f"{CHANNEL}:{TS}", f"U0ABC/{TS}", f"{CHANNEL}/abc", "#ops/1.2"]
-)
-def test_parse_target_refuses_garbage(raw):
-    with pytest.raises(ReplyError):
-        parse_target(raw)
-
-
-def test_post_goes_through_vegas_hermes_profile_on_stdin():
-    runner = FakeRunner()
-    out = post(
-        Target(CHANNEL, TS), "hello", profile="vega", dry_run=False, runner=runner
-    )
-    assert out == f"posted to {CHANNEL}/{TS}"
-    ((argv, stdin),) = runner.calls
-    assert argv[:4] == ["hermes", "-p", "vega", "send"]
-    assert argv[-2:] == [f"slack:{CHANNEL}:{TS}", "--quiet"]
-    assert stdin == "hello"
-    assert "SLACK_BOT_TOKEN" in runner.dropped
-
-
-def test_post_dry_run_and_errors():
-    runner = FakeRunner()
-    out = post(Target(CHANNEL, TS), "done", profile="vega", dry_run=True, runner=runner)
-    assert out.startswith("[dry-run]") and runner.calls == []
-    with pytest.raises(ReplyError, match="hermes send failed"):
-        post(
-            Target(CHANNEL, TS),
-            "x",
-            profile="vega",
-            dry_run=False,
-            runner=FakeRunner(hermes_rc=1),
-        )
-
+from .conftest import FUEL_LOW, FUEL_OK, ORIGIN, FakeRunner, show_text
 
 # --- the subprocess environment -----------------------------------------------------
 

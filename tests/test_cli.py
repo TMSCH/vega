@@ -20,41 +20,6 @@ def conf(tmp_path: Path) -> Path:
     return path
 
 
-def test_reply_dry_run(capsys, conf):
-    assert (
-        cli.main(
-            ["--config", str(conf), "reply", f"{CHANNEL}/{TS}", "on it", "--dry-run"]
-        )
-        == 0
-    )
-    assert (
-        capsys.readouterr().out
-        == f"[dry-run] would post to slack:{CHANNEL}:{TS}:\non it\n"
-    )
-
-
-def test_reply_from_file_dry_run(capsys, conf, tmp_path):
-    body = tmp_path / "answer.md"
-    body.write_text("line 1\nline 2\n")
-    code = cli.main(
-        [
-            "--config",
-            str(conf),
-            "reply",
-            f"{CHANNEL}/{TS}",
-            "--file",
-            str(body),
-            "--dry-run",
-        ]
-    )
-    assert code == 0 and "line 1\nline 2" in capsys.readouterr().out
-
-
-def test_reply_bad_target_is_a_usage_error(capsys, conf):
-    assert cli.main(["--config", str(conf), "reply", "general", "x", "--dry-run"]) == 2
-    assert "bad target" in capsys.readouterr().err
-
-
 def test_admit_records_the_thread_then_threads_and_news(monkeypatch, capsys, conf):
     fake = FakeRunner()
     monkeypatch.setattr(runner_mod, "run", fake)

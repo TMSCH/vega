@@ -1,4 +1,4 @@
-"""The ``vega`` command: reply into Slack, read fleet, inspect a thread's record."""
+"""The ``vega`` command: check the config, read fleet, inspect a thread's record."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, config, fleet, inbound, origin, reply
+from . import __version__, config, fleet, inbound, origin
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -18,28 +18,12 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args, cfg)
     except (
         config.ConfigError,
-        reply.ReplyError,
         fleet.FleetError,
         origin.OriginError,
         ValueError,
     ) as exc:
         print(f"vega: {exc}", file=sys.stderr)
         return 2
-
-
-def _reply(args: argparse.Namespace, cfg: config.VegaConfig) -> int:
-    target = reply.parse_target(args.target)
-    if args.file and args.text:
-        raise reply.ReplyError("pass the reply as TEXT or --file, not both")
-    if args.file == "-" or (not args.file and args.text is None):
-        text = sys.stdin.read()
-    elif args.file:
-        text = Path(args.file).read_text(encoding="utf-8")
-    else:
-        text = args.text
-    dry_run = args.dry_run or cfg.dry_run
-    print(reply.post(target, text, profile=cfg.hermes_profile, dry_run=dry_run))
-    return 0
 
 
 def _admit(args: argparse.Namespace, cfg: config.VegaConfig) -> int:
@@ -125,9 +109,7 @@ def _config(args: argparse.Namespace, cfg: config.VegaConfig) -> int:
         f"fuel gate:        {cfg.fuel_providers or 'first account'} + {cfg.fuel_margin}"
     )
     print(f"heartbeat every:  {cfg.heartbeat_seconds}s")
-    print(f"hermes profile:   {cfg.hermes_profile}")
     print(f"runtime dir:      {cfg.runtime_dir}")
-    print(f"dry run:          {cfg.dry_run}")
     if not cfg.allowed_users:
         print("warning: the allowlist is empty, so everyone is refused")
     if not cfg.repos:
@@ -145,15 +127,6 @@ def _parser() -> argparse.ArgumentParser:
         help="vega.toml to read (default: $VEGA_CONFIG, else Vega's Hermes profile)",
     )
     sub = p.add_subparsers(required=True, metavar="COMMAND")
-
-    r = sub.add_parser("reply", help="post into a Slack thread as Vega (operator use)")
-    r.add_argument("target", help="<channel id>/<thread_ts>")
-    r.add_argument("text", nargs="?", help="the reply; omit to read --file or stdin")
-    r.add_argument("--file", help="read the reply from this file ('-' for stdin)")
-    r.add_argument(
-        "--dry-run", action="store_true", help="print instead of posting to Slack"
-    )
-    r.set_defaults(func=_reply)
 
     a = sub.add_parser(
         "admit",

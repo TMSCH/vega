@@ -2,9 +2,11 @@
 
 They live in a TOML file outside the repo (``vega.toml`` in Vega's Hermes profile by
 default) so that no Slack id or machine path is ever committed. ``vega.example.toml``
-at the repo root documents every key and its default. Tables Vega no longer reads
-(``[mission_control]``, ``[status]`` from the relay era) are ignored, not refused, so an
-older ``vega.toml`` keeps working.
+at the repo root documents every key and its default.
+
+The schema is closed: a table or key Vega does not read is an error, not a warning.
+A misspelt ``[acces]`` must not silently leave the allowlist empty, and a key from
+an earlier design must not sit in the file looking as if it still did something.
 """
 
 from __future__ import annotations
@@ -31,6 +33,16 @@ USER_ID_RE = re.compile(r"^[UW][A-Z0-9]{2,}$")
 CHANNEL_ID_RE = re.compile(r"^[CGD][A-Z0-9]{2,}$")
 _INTERVAL_RE = re.compile(r"^\s*(\d+)\s*(s|m|h)\s*$")
 
+# Every table and key ``vega.toml`` may contain. Anything else is refused.
+SCHEMA: dict[str, frozenset[str]] = {
+    "access": frozenset({"users", "channels", "refusal"}),
+    "fleet": frozenset({"project", "repos", "fuel_margin", "fuel_providers"}),
+    "origin": frozenset(
+        {"heartbeat_interval", "max_sends_per_hour", "max_brief_chars"}
+    ),
+    "runtime": frozenset({"dir"}),
+}
+
 
 class ConfigError(ValueError):
     """The config file exists but says something Vega cannot use."""
@@ -49,11 +61,9 @@ class VegaConfig:
     # Providers the gate reads; empty means the first account `fleet status --fuel`
     # prints, which is the checkout's own.
     fuel_providers: tuple[str, ...] = ()
-    hermes_profile: str = DEFAULT_PROFILE
     runtime_dir: Path = field(
         default_factory=lambda: Path("~/.local/state/vega").expanduser()
     )
-    dry_run: bool = False
     heartbeat_seconds: int = 300
     max_sends_per_hour: int = DEFAULT_MAX_SENDS_PER_HOUR
     max_brief_chars: int = DEFAULT_MAX_BRIEF_CHARS
@@ -96,9 +106,9 @@ def load(path: Path | None = None) -> VegaConfig:
 
 
 def from_dict(data: dict, source: Path | None = None) -> VegaConfig:
+    _check_schema(data)
     access = _table(data, "access")
     fleet = _table(data, "fleet")
-    slack = _table(data, "slack")
     runtime = _table(data, "runtime")
     origin = _table(data, "origin")
 
@@ -121,9 +131,7 @@ def from_dict(data: dict, source: Path | None = None) -> VegaConfig:
             fleet.get("fuel_margin", DEFAULT_FUEL_MARGIN), "fleet.fuel_margin", 0
         ),
         fuel_providers=_names(fleet.get("fuel_providers", []), "fleet.fuel_providers"),
-        hermes_profile=str(slack.get("hermes_profile", DEFAULT_PROFILE)),
         runtime_dir=_path(runtime.get("dir"), defaults.runtime_dir),
-        dry_run=bool(runtime.get("dry_run", False)),
         heartbeat_seconds=parse_interval(
             str(origin.get("heartbeat_interval", DEFAULT_HEARTBEAT_INTERVAL))
         ),
@@ -154,6 +162,20 @@ def parse_interval(text: str) -> int:
             f"origin.heartbeat_interval must be at least {MIN_HEARTBEAT_SECONDS}s"
         )
     return seconds
+
+
+def _check_schema(data: dict) -> None:
+    """Refuse any table or key outside :data:`SCHEMA`, naming the first one found."""
+    for name in data:
+        if name not in SCHEMA:
+            raise ConfigError(
+                f"[{name}] is not a Vega table; known: {', '.join(sorted(SCHEMA))}"
+            )
+    for name, keys in SCHEMA.items():
+        for key in _table(data, name):
+            if key not in keys:
+                known = ", ".join(sorted(keys))
+                raise ConfigError(f"{name}.{key} is not a Vega setting; known: {known}")
 
 
 def _table(data: dict, name: str) -> dict:

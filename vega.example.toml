@@ -5,6 +5,8 @@
 # Lookup order: `vega --config PATH`, then $VEGA_CONFIG, then
 # `$HERMES_HOME/vega.toml` (Vega's profile home), then
 # `~/.hermes/profiles/vega/vega.toml`. A missing file refuses everyone.
+# Only the tables and keys below exist: any other table or key is an error, so
+# a typo cannot silently leave the allowlist empty.
 
 [access]
 # Slack member ids (U… or W…) allowed to talk to Vega. Find one in Slack:
@@ -42,12 +44,6 @@ channels = []
 # The largest brief a thread may write for a task, in characters.
 # max_brief_chars = 20000
 
-[slack]
-# The Hermes profile holding Vega's Slack tokens; `vega reply` posts through it.
-# hermes_profile = "vega"
-
 [runtime]
 # Where thread records, topic prompts and task briefs are written (mode 600).
 # dir = "~/.local/state/vega"
-# true makes `vega reply` print instead of posting, as if --dry-run were passed.
-# dry_run = false

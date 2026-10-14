@@ -27,8 +27,8 @@ VIEWS: dict[str, tuple[str, ...]] = {
 }
 VIEW_TIMEOUT = 90
 MAX_OUTPUT_CHARS = 3500
-# What a fleet child must not inherit: Slack tokens (reply.py's reason), and thurbox's
-# session markers, which `fleet queue add` would otherwise record as the origin.
+# What a fleet child must not inherit: Vega's Slack tokens, and thurbox's session
+# markers, which `fleet queue add` would otherwise record as the origin.
 DROP_ENV = ("SLACK_*", "THURBOX_SESSION", "THURBOX_TASK")
 PUBLISH_METHODS = ("pr", "attested", "push", "note", "served", "none")
 

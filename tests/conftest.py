@@ -66,7 +66,6 @@ class FakeRunner:
     find_rows: list[dict] = field(default_factory=list)
     shows: dict[str, str] = field(default_factory=dict)
     rc: dict[str, int] = field(default_factory=dict)
-    hermes_rc: int = 0
     calls: list[tuple[list[str], str | None]] = field(default_factory=list)
     dropped: tuple = ()
 
@@ -74,8 +73,6 @@ class FakeRunner:
         argv = list(argv)
         self.calls.append((argv, input))
         self.dropped = tuple(drop_env)
-        if argv[:1] == ["hermes"]:
-            return Completed(self.hermes_rc, "", "" if self.hermes_rc == 0 else "nope")
         assert argv[:5] == ["uv", "run", "--project", argv[3], "fleet"], argv
         verb = " ".join(argv[5:7]) if argv[5] == "queue" else argv[5]
         if verb == "queue topic":
