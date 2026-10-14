@@ -425,6 +425,8 @@ def news(cfg: VegaConfig, thread: Thread, runner: Runner | None = None) -> dict:
 
     Returns ``{"news": [...], "open": [...], "done": bool}``. ``done`` is True when no
     task of the thread is still open, which is when the heartbeat may be cleared.
+    The worker's result is attached to the first event that reports the task
+    finished, and only once.
     """
     live_tasks(cfg, thread, runner)
     events = []
@@ -433,40 +435,63 @@ def news(cfg: VegaConfig, thread: Thread, runner: Runner | None = None) -> dict:
         if prev.get("state") in TERMINAL_STATES:
             continue
         record = fleet.show(cfg, ref, runner)
-        events += _diff(ref, prev, record)
+        result = "" if prev.get("result_told") else fleet.result_body(record)
+        new_events = _diff(ref, prev, record, result)
+        events += new_events
         thread.tasks[ref] = {
             "state": str(record.get("state") or ""),
             "outcome": str(record.get("outcome") or ""),
             "artifacts": fleet.artifact_urls(record),
             "needs_input": _latest_need(record, prev.get("needs_input") or "")[0],
             "title": str(record.get("title") or prev.get("title") or ""),
+            "result_told": bool(prev.get("result_told"))
+            or any("result" in e for e in new_events),
         }
     save_thread(cfg, thread)
     open_refs = thread.open_refs()
     return {"news": events, "open": open_refs, "done": not open_refs}
 
 
-def _diff(ref: str, prev: dict, record: dict) -> list[dict]:
+# Events that end a task's story, where the worker's result belongs.
+_RESULT_KINDS = ("finished", "shipped", "landed", "abandoned", "stuck", "failed")
+
+
+def _diff(ref: str, prev: dict, record: dict, result: str = "") -> list[dict]:
     events: list[dict] = []
     state = str(record.get("state") or "")
     was = str(prev.get("state") or "")
     title = str(record.get("title") or "")
+    outcome = str(record.get("outcome") or "")
     urls = fleet.artifact_urls(record)
     new_urls = [u for u in urls if u not in (prev.get("artifacts") or [])]
+    # A task that ends without a pull request (an answer, a report, a check) has
+    # nothing to merge: its result is the deliverable.
+    answer_only = outcome != "shipped" and not urls
+    told = bool(prev.get("result_told"))
 
     def add(kind: str, **extra: object) -> None:
-        events.append({"ref": ref, "kind": kind, "title": title, **extra})
+        nonlocal told
+        event = {"ref": ref, "kind": kind, "title": title, **extra}
+        if result and not told and kind in _RESULT_KINDS:
+            event["result"] = result
+            told = True
+        events.append(event)
 
     if state != was:
         if state == "dispatched":
             add("started")
+        elif state == "done" and answer_only:
+            add("finished")
         elif state == "landed":
-            add("landed", urls=urls)
+            if answer_only:
+                if not told:
+                    add("finished")
+            else:
+                add("landed", urls=urls)
         elif state == "abandoned":
             add("abandoned", why=str(record.get("abandoned") or ""))
         elif state in ("stuck", "failed"):
-            add(state, outcome=str(record.get("outcome") or ""))
-    outcome = str(record.get("outcome") or "")
+            add(state, outcome=outcome)
     if outcome == "shipped" and prev.get("outcome") != "shipped":
         add("shipped", urls=urls)
     elif new_urls and state not in TERMINAL_STATES and outcome != "shipped":
@@ -502,28 +527,35 @@ def _latest_need(record: dict, after: str) -> tuple[str, str]:
 
 
 def render_news(events: list[dict]) -> list[str]:
-    """One plain line per event, the way it should read in Slack."""
+    """One plain line per event, the way it should read in Slack.
+
+    When the event carries the worker's result, it follows the line, because the
+    result is what the person asked for.
+    """
     lines = []
     for e in events:
         ref, title = e["ref"], e.get("title") or ""
         label = f"{ref}" + (f" ({title})" if title else "")
         kind = e["kind"]
         if kind == "started":
-            lines.append(f"{label}: a worker started on it.")
+            line = f"{label}: a worker started on it."
+        elif kind == "finished":
+            line = f"{label}: finished."
         elif kind == "shipped":
             urls = " ".join(e.get("urls") or [])
-            lines.append(f"{label}: shipped{' - ' + urls if urls else ''}.")
+            line = f"{label}: shipped{' - ' + urls if urls else ''}."
         elif kind == "pull_request":
-            lines.append(f"{label}: pull request opened - {' '.join(e['urls'])}.")
+            line = f"{label}: pull request opened - {' '.join(e['urls'])}."
         elif kind == "landed":
-            lines.append(f"{label}: landed (merged).")
+            line = f"{label}: landed (merged)."
         elif kind == "abandoned":
             why = e.get("why") or "no reason recorded"
-            lines.append(f"{label}: abandoned - {why}.")
+            line = f"{label}: abandoned - {why}."
         elif kind == "needs_input":
-            lines.append(f"{label}: the worker needs input - {e.get('question')}")
+            line = f"{label}: the worker needs input - {e.get('question')}"
         else:
-            lines.append(
-                f"{label}: {kind}{' - ' + e['outcome'] if e.get('outcome') else ''}."
-            )
+            line = f"{label}: {kind}{' - ' + e['outcome'] if e.get('outcome') else ''}."
+        if e.get("result"):
+            line += "\n" + e["result"]
+        lines.append(line)
     return lines

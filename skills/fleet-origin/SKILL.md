@@ -50,9 +50,10 @@ was left queued. Then stop. What happens next reaches this thread through the
 heartbeat Vega armed when the first task was added:
 
 - Each tick, call `vega_fleet_news` once. It returns only what changed since the
-  thread was last told: a worker started, a pull request opened, shipped with
-  the link, landed, abandoned and why, or a worker's question. Post each line.
-  With nothing new, reply exactly `NO_REPLY`.
+  thread was last told: a worker started, a pull request opened, finished with
+  the worker's result, shipped with the link, landed, abandoned and why, or a
+  worker's question. Post each line; a result's numbers and facts stay exactly
+  as the worker wrote them. With nothing new, reply exactly `NO_REPLY`.
 - Answer a worker's question with `vega_send` when the answer is already in the
   thread. Otherwise ask the person and wait; the worker keeps its question on
   the board.
