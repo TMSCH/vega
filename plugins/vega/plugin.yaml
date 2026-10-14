@@ -1,10 +1,16 @@
 name: vega
-version: 0.1.0
-description: "Slack front door to fleet's Mission Control: allowlist, relay to the lead session, read-only fleet status."
+version: 0.2.0
+description: "Slack front door to fleet: each Slack thread is a fleet origin. Allowlist gate, intake tools, heartbeat-driven news."
 manifest_version: 2
 provides_hooks:
   - pre_gateway_dispatch
   - post_gateway_admission
 provides_tools:
   - vega_fleet_status
-  - vega_relay_to_mission_control
+  - vega_show
+  - vega_find
+  - vega_topic_add
+  - vega_task_add
+  - vega_dispatch
+  - vega_send
+  - vega_fleet_news

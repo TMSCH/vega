@@ -1,10 +1,12 @@
 # Vega's own settings. Copy this file to `vega.toml` in Vega's Hermes profile
 # (scripts/install.sh does it for you) and fill in the allowlist there.
-# `vega.toml` is never committed: it holds your workspace's Slack ids.
+# `vega.toml` is never committed: it holds your workspace's Slack ids and paths.
 #
 # Lookup order: `vega --config PATH`, then $VEGA_CONFIG, then
 # `$HERMES_HOME/vega.toml` (Vega's profile home), then
 # `~/.hermes/profiles/vega/vega.toml`. A missing file refuses everyone.
+# Only the tables and keys below exist: any other table or key is an error, so
+# a typo cannot silently leave the allowlist empty.
 
 [access]
 # Slack member ids (U… or W…) allowed to talk to Vega. Find one in Slack:
@@ -15,38 +17,33 @@ users = []
 # Vega has been invited to (Slack only delivers those), still only from the
 # users above.
 channels = []
-# What anyone else is told, once per ten minutes at most. Nothing is relayed.
+# What anyone else is told, once per ten minutes at most.
 # refusal = "Sorry, I only take requests from people and channels on my allowlist. Ask the fleet operator to add you if you need access."
 
-[mission_control]
-# Vega delivers to the one live thurbox session whose name contains this text
-# (case-insensitive). Session names carry a glyph, so they are matched, never typed.
-# lead_match = "Mission Control"
-# Posted in the Slack thread once a message is relayed.
-# ack = "Passed to Mission Control. It will answer in this thread."
-# Append "(answer in Slack with: vega reply <channel>/<ts> …)" to every relayed
-# line, so Mission Control knows how to answer without any standing instruction.
-# reply_hint = true
-
 [fleet]
-# The fleet checkout whose read-only commands answer status questions
-# (`fleet status`, `fleet queue list --live`, `fleet context`).
+# The fleet checkout (the control plane) every fleet command runs against, as
+# `uv run --project <project> fleet …`.
 # project = "~/fleet"
+# Repositories a Slack thread may open a task in. A task naming any other path
+# is refused before fleet is asked. Empty means no task can be added.
+# repos = ["~/app", "~/web"]
+# fleet-intake's rule: an origin dispatches only when fuel reads at least
+# reserve + this margin, fresh, on every gated account. Below that the tasks
+# stay queued for the conductor.
+# fuel_margin = 10
+# Which accounts the gate reads, by provider name as `fleet status --fuel`
+# prints them. Empty means the first account printed, the checkout's own.
+# fuel_providers = []
 
-[slack]
-# The Hermes profile holding Vega's Slack tokens; `vega reply` posts through it.
-# hermes_profile = "vega"
+[origin]
+# How often a thread with open tasks checks fleet's records and posts news
+# (shipped, landed, abandoned, a worker's question). At least 60s.
+# heartbeat_interval = "5m"
+# How many times per hour a thread may answer one worker with `fleet queue send`.
+# max_sends_per_hour = 6
+# The largest brief a thread may write for a task, in characters.
+# max_brief_chars = 20000
 
 [runtime]
-# Where long inbound messages are written for Mission Control to read.
+# Where thread records, topic prompts and task briefs are written (mode 600).
 # dir = "~/.local/state/vega"
-# Messages longer than this, or with line breaks, go to a file instead of inline.
-# max_inline_chars = 400
-# true makes `vega reply` print instead of posting, as if --dry-run were passed.
-# dry_run = false
-
-[status]
-# Regexes (matched against the lower-cased message) that mark a status question,
-# which Vega answers itself from fleet's read-only views without waking the lead.
-# Everything else is relayed to Mission Control.
-# patterns = ["\\bwhat'?s (running|in flight|going on|happening)\\b", "^\\s*status\\??\\s*$"]

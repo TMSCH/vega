@@ -1,4 +1,4 @@
-"""Vega: the Slack front door to fleet's Mission Control.
+"""Vega: the Slack front door to fleet. Each Slack thread is its own fleet origin.
 
 This directory is both the Hermes plugin (``register`` below, loaded from Vega's
 profile) and the ``vega`` Python package behind the ``vega`` command. Nothing here
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def register(ctx: Any) -> None:

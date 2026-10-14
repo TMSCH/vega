@@ -1,6 +1,6 @@
 [project]
 name = "vega"
-version = "0.1.0"
+version = "0.2.0"
 description = "Hermes agent that fronts fleet's Mission Control on Slack"
 readme = "README.md"
 requires-python = ">=3.11"

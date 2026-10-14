@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -19,15 +20,28 @@ def test_loads_toml(tmp_path: Path):
     path = tmp_path / "vega.toml"
     path.write_text(
         f'[access]\nusers = ["{USER}"]\nchannels = ["{CHANNEL}"]\n'
-        '[mission_control]\nlead_match = "Lead"\n'
-        "[runtime]\ndry_run = true\n"
+        '[fleet]\nproject = "~/f"\nrepos = ["~/app", "/srv/web"]\n'
+        'fuel_margin = 15\nfuel_providers = ["claude"]\n'
+        '[origin]\nheartbeat_interval = "90s"\nmax_sends_per_hour = 3\n'
+        '[runtime]\ndir = "~/state"\n'
     )
     cfg = config.load(path)
     assert cfg.allowed_users == {USER}
     assert cfg.allowed_channels == {CHANNEL}
-    assert cfg.lead_match == "Lead"
-    assert cfg.dry_run is True
+    assert cfg.fleet_project == Path("~/f").expanduser()
+    assert cfg.repos == (Path("~/app").expanduser(), Path("/srv/web"))
+    assert (cfg.fuel_margin, cfg.fuel_providers) == (15, ("claude",))
+    assert (cfg.heartbeat_seconds, cfg.max_sends_per_hour) == (90, 3)
+    assert cfg.runtime_dir == Path("~/state").expanduser()
     assert cfg.source == path
+
+
+def test_defaults():
+    cfg = config.from_dict({})
+    assert cfg.heartbeat_seconds == 300
+    assert cfg.fuel_margin == 10 and cfg.fuel_providers == ()
+    assert cfg.repos == () and cfg.max_sends_per_hour == 6
+    assert cfg.max_brief_chars == 20_000
 
 
 @pytest.mark.parametrize(
@@ -37,8 +51,13 @@ def test_loads_toml(tmp_path: Path):
         {"access": {"channels": ["U0123ABC"]}},
         {"access": {"users": "U0123ABC"}},
         {"access": []},
-        {"runtime": {"max_inline_chars": 5}},
-        {"status": {"patterns": ["("]}},
+        {"origin": {"heartbeat_interval": "30s"}},
+        {"origin": {"heartbeat_interval": "soon"}},
+        {"origin": {"max_sends_per_hour": 0}},
+        {"origin": {"max_brief_chars": 10}},
+        {"fleet": {"fuel_margin": -1}},
+        {"fleet": {"fuel_providers": ["bad name"]}},
+        {"fleet": {"repos": "~/app"}},
     ],
 )
 def test_rejects_bad_config(data):
@@ -46,11 +65,40 @@ def test_rejects_bad_config(data):
         config.from_dict(data)
 
 
+@pytest.mark.parametrize(
+    ("data", "named"),
+    [
+        # A typo must not silently leave the allowlist empty.
+        ({"acces": {"users": [USER]}}, "[acces]"),
+        ({"access": {"user": [USER]}}, "access.user"),
+        # Tables and keys from earlier designs are refused, not ignored.
+        ({"mission_control": {"lead_match": "Lead"}}, "[mission_control]"),
+        ({"status": {"patterns": []}}, "[status]"),
+        ({"slack": {"hermes_profile": "vega"}}, "[slack]"),
+        ({"runtime": {"dry_run": True}}, "runtime.dry_run"),
+    ],
+)
+def test_rejects_unknown_tables_and_keys(data, named):
+    with pytest.raises(config.ConfigError, match=re.escape(named)):
+        config.from_dict(data)
+
+
+def test_schema_matches_the_dataclass():
+    """Every schema key is read by from_dict; the example file exercises them all."""
+    example = Path(__file__).parents[1] / "vega.example.toml"
+    text = example.read_text()
+    for table, keys in config.SCHEMA.items():
+        assert f"[{table}]" in text
+        for key in keys:
+            assert re.search(rf"^#? ?{key} = ", text, re.M), f"{table}.{key}"
+
+
 def test_example_config_parses_and_names_no_ids():
     example = Path(__file__).parents[1] / "vega.example.toml"
     cfg = config.load(example)
     assert cfg.allowed_users == frozenset()
     assert cfg.allowed_channels == frozenset()
+    assert cfg.repos == ()
 
 
 def test_any_channel_vega_is_in(tmp_path: Path):

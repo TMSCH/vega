@@ -6,7 +6,7 @@ import pytest
 from vega import cli
 from vega import runner as runner_mod
 
-from .conftest import CHANNEL, TS, USER
+from .conftest import CHANNEL, ORIGIN, TS, USER, FakeRunner, show_text
 
 
 @pytest.fixture
@@ -15,55 +15,19 @@ def conf(tmp_path: Path) -> Path:
     path.write_text(
         f'[access]\nusers = ["{USER}"]\nchannels = ["{CHANNEL}"]\n'
         f'[runtime]\ndir = "{tmp_path / "state"}"\n'
+        f'[fleet]\nproject = "{tmp_path / "fleet"}"\n'
     )
     return path
 
 
-def test_reply_dry_run(capsys, conf):
-    assert (
-        cli.main(
-            ["--config", str(conf), "reply", f"{CHANNEL}/{TS}", "on it", "--dry-run"]
-        )
-        == 0
-    )
-    assert (
-        capsys.readouterr().out
-        == f"[dry-run] would post to slack:{CHANNEL}:{TS}:\non it\n"
-    )
-
-
-def test_reply_from_file_dry_run(capsys, conf, tmp_path):
-    body = tmp_path / "answer.md"
-    body.write_text("line 1\nline 2\n")
-    assert (
-        cli.main(
-            [
-                "--config",
-                str(conf),
-                "reply",
-                f"{CHANNEL}/{TS}",
-                "--file",
-                str(body),
-                "--dry-run",
-            ]
-        )
-        == 0
-    )
-    assert "line 1\nline 2" in capsys.readouterr().out
-
-
-def test_reply_bad_target_is_a_usage_error(capsys, conf):
-    assert cli.main(["--config", str(conf), "reply", "general", "x", "--dry-run"]) == 2
-    assert "bad target" in capsys.readouterr().err
-
-
-def test_relay_simulation(monkeypatch, capsys, conf, fake):
+def test_admit_records_the_thread_then_threads_and_news(monkeypatch, capsys, conf):
+    fake = FakeRunner()
     monkeypatch.setattr(runner_mod, "run", fake)
+    base = ["--config", str(conf)]
     code = cli.main(
         [
-            "--config",
-            str(conf),
-            "relay",
+            *base,
+            "admit",
             "--user",
             USER,
             "--name",
@@ -76,30 +40,40 @@ def test_relay_simulation(monkeypatch, capsys, conf, fake):
         ]
     )
     out = capsys.readouterr().out
-    assert code == 0 and "outcome: relayed" in out
-    line = fake.sent()[0][-1]
-    assert line.startswith(f"[from: Ada · slack: {CHANNEL}/{TS}] ship it (answer in")
-    assert f'vega reply {CHANNEL}/{TS} "<text>"' in line
+    assert code == 0 and "outcome: admitted" in out and f"origin:  {ORIGIN}" in out
+    assert cli.main([*base, "threads"]) == 0
+    assert "1 message(s)" in capsys.readouterr().out
+    assert cli.main([*base, "news", f"{CHANNEL}/{TS}"]) == 0
+    assert capsys.readouterr().out == "no news\nopen: none (done)\n"
+    assert fake.fleet_calls() == [["queue", "find", "--origin", ORIGIN, "--json"]]
 
 
-def test_relay_simulation_refuses_stranger(monkeypatch, capsys, conf, fake):
-    monkeypatch.setattr(runner_mod, "run", fake)
-    assert (
-        cli.main(
-            [
-                "--config",
-                str(conf),
-                "relay",
-                "--user",
-                "U0NOBODY0",
-                "--channel",
-                CHANNEL,
-                "--thread-ts",
-                TS,
-                "ship it",
-            ]
-        )
-        == 0
+def test_admit_refuses_a_stranger(capsys, conf):
+    code = cli.main(
+        [
+            "--config",
+            str(conf),
+            "admit",
+            "--user",
+            "U0NOBODY0",
+            "--channel",
+            CHANNEL,
+            "--thread-ts",
+            TS,
+            "ship it",
+        ]
     )
-    assert "outcome: refused" in capsys.readouterr().out
-    assert fake.calls == []
+    assert code == 1 and "outcome: refused" in capsys.readouterr().out
+
+
+def test_status_show_and_config(monkeypatch, capsys, conf):
+    fake = FakeRunner(shows={"t/01-a": show_text("t/01-a")})
+    monkeypatch.setattr(runner_mod, "run", fake)
+    assert cli.main(["--config", str(conf), "status", "fuel"]) == 0
+    assert "provider\tclaude" in capsys.readouterr().out
+    assert cli.main(["--config", str(conf), "show", "t/01-a"]) == 0
+    assert "state:       queued" in capsys.readouterr().out
+    assert cli.main(["--config", str(conf), "show", "nope"]) == 2
+    assert cli.main(["--config", str(conf), "config"]) == 0
+    out = capsys.readouterr().out
+    assert "heartbeat every:  300s" in out and "fleet.repos is empty" in out
