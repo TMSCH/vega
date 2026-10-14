@@ -30,7 +30,9 @@ repository (one the operator allowlisted; the tool refuses any other), the
 branch, and the four brief sections: **what to do**, **hard constraints**,
 **coordination**, **done means**. Workers share no context with you or with the
 thread, so each section must stand on its own. Vega sets the origin to this
-thread; you never name it.
+thread; you never name it. Name an `agent` only when the operator's
+instructions say which thurbox agent fits the request; otherwise leave it out
+and fleet's default runs the task.
 
 When the tasks span several repositories or would start more than two workers,
 confirm the set with the person in one line before the first dispatch.

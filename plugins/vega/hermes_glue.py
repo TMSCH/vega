@@ -335,6 +335,7 @@ def _task_add(cfg: config.VegaConfig, args: dict) -> dict:
         branch=args.get("branch"),
         base=args.get("base"),
         publish=args.get("publish"),
+        agent=args.get("agent"),
         sections={key: args.get(key) for key, _ in origin.BRIEF_SECTIONS},
         by=_asker(),
     )
@@ -461,6 +462,10 @@ TASK_ADD_SCHEMA = {
                 "enum": list(fleet.PUBLISH_METHODS),
                 "description": "Optional: what the task must leave behind; default pr.",
             },
+            "agent": _str(
+                "Optional: the registered thurbox agent to run this task, when the "
+                "operator's instructions name one; omitted means fleet's default."
+            ),
             "what_to_do": _str("Brief section: the goal and the work, from scratch."),
             "hard_constraints": _str("Brief section: what the worker must not do."),
             "coordination": _str("Brief section: other tasks or people it must mind."),

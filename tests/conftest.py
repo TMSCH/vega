@@ -71,11 +71,17 @@ class FakeRunner:
     rc: dict[str, int] = field(default_factory=dict)
     calls: list[tuple[list[str], str | None]] = field(default_factory=list)
     dropped: tuple = ()
+    agents: set[str] = field(default_factory=lambda: {"claude-coder"})
 
     def __call__(self, argv, *, input=None, timeout=30.0, drop_env=()):
         argv = list(argv)
         self.calls.append((argv, input))
         self.dropped = tuple(drop_env)
+        if argv[0].endswith("thurbox-cli"):
+            assert argv[1:3] == ["agent", "launch-args"] and argv[4:] == ["--json"]
+            if argv[3] in self.agents:
+                return Completed(0, json.dumps({"agent": argv[3]}), "")
+            return Completed(1, json.dumps({"error": f"no agent {argv[3]!r}"}), "")
         assert argv[:5] == ["uv", "run", "--project", argv[3], "fleet"], argv
         verb = " ".join(argv[5:7]) if argv[5] == "queue" else argv[5]
         if verb == "queue topic":
@@ -107,10 +113,26 @@ class FakeRunner:
     def fleet_calls(self) -> list[list[str]]:
         return [a[5:] for a, _ in self.calls if a[:2] == ["uv", "run"]]
 
+    def thurbox_calls(self) -> list[list[str]]:
+        return [a[1:] for a, _ in self.calls if a[0].endswith("thurbox-cli")]
+
 
 @pytest.fixture
 def fake() -> FakeRunner:
     return FakeRunner()
+
+
+THURBOX_CLI = "/opt/thurbox/bin/thurbox-cli"
+
+
+@pytest.fixture
+def thurbox_cli(monkeypatch) -> str:
+    """Put a (fake) thurbox-cli on PATH, as far as ``shutil.which`` can tell."""
+    monkeypatch.setattr(
+        "vega.fleet.shutil.which",
+        lambda name: THURBOX_CLI if name == "thurbox-cli" else None,
+    )
+    return THURBOX_CLI
 
 
 @pytest.fixture

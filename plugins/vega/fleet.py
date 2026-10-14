@@ -4,13 +4,16 @@ Only argv built here is ever run: ``uv run --project <fleet.project> fleet …``
 shell, a timeout, and an environment stripped of Slack tokens and of the thurbox
 markers that would make ``fleet queue add`` record the gateway's launcher as the task's
 origin. Free text from the model reaches an argv only as a validated ref, slug, branch,
-title or answer, never as a flag: anything starting with ``-`` is refused.
+title, agent name or answer, never as a flag: anything starting with ``-`` is refused.
+An agent name is also checked against thurbox's registry with ``thurbox-cli``, run the
+same way.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,6 +40,8 @@ _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,60}$")
 REF_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,60}/\d{2}-[a-z0-9][a-z0-9-]{0,60}$")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,120}$")
+AGENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+AGENT_TIMEOUT = 30
 _SHOW_LINE = re.compile(r"^ {4}([a-z_]+):\s*(.*)$")
 MAX_TITLE_CHARS = 120
 
@@ -161,6 +166,42 @@ def _same(a: Path, b: Path) -> bool:
         return a.resolve() == b.resolve() or (a.name == b.name and str(a) == a.name)
     except OSError:
         return False
+
+
+def check_agent(value: object, runner: Runner | None = None) -> str | None:
+    """A thurbox agent name, only if thurbox's registry knows it; empty means none.
+
+    The name's syntax is checked before any subprocess; then
+    ``thurbox-cli agent launch-args <name> --json`` must exit 0, which it does only
+    for an agent registered in thurbox's ``agents.toml``.
+    """
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if not AGENT_RE.match(text):
+        raise FleetError(
+            f"agent {text!r} must be letters, digits, '.', '_' and '-', not starting "
+            "with '-', at most 64 characters"
+        )
+    cli = shutil.which("thurbox-cli")
+    if not cli:
+        raise FleetError(
+            f"agent {text!r} cannot be checked: thurbox-cli is not on PATH, so no "
+            "task can name an agent"
+        )
+    result = (runner or _runner.run)(
+        [cli, "agent", "launch-args", text, "--json"],
+        timeout=AGENT_TIMEOUT,
+        drop_env=DROP_ENV,
+    )
+    if result.returncode in (124, 127):
+        raise FleetError(f"agent {text!r} cannot be checked: {result.stderr}")
+    if result.returncode != 0:
+        raise FleetError(
+            f"agent {text!r} is not registered in thurbox; it must be registered "
+            "there (agents.toml) before a task can name it"
+        )
+    return text
 
 
 def check_line(value: object, what: str, limit: int = 2000) -> str:

@@ -121,6 +121,47 @@ def test_repo_must_be_allowlisted(cfg, repo, tmp_path):
         fleet.check_repo(replace(cfg, repos=()), str(repo))
 
 
+@pytest.mark.parametrize(
+    "value", ["-x", "--help", "a b", "a;b", "$(id)", "a/b", "x" * 65, "é", ".hidden"]
+)
+def test_bad_agent_names_are_refused_before_any_subprocess(value, thurbox_cli):
+    runner = FakeRunner()
+    with pytest.raises(FleetError, match="letters, digits"):
+        fleet.check_agent(value, runner)
+    assert runner.calls == []
+
+
+def test_a_registered_agent_is_checked_with_thurbox_cli(thurbox_cli):
+    runner = FakeRunner(agents={"claude-coder", "codex_ops.v2"})
+    assert fleet.check_agent(" claude-coder ", runner) == "claude-coder"
+    assert fleet.check_agent("codex_ops.v2", runner) == "codex_ops.v2"
+    argv = runner.calls[0][0]
+    assert argv == [thurbox_cli, "agent", "launch-args", "claude-coder", "--json"]
+    assert runner.dropped == fleet.DROP_ENV
+
+
+def test_an_unregistered_agent_is_refused_by_name(thurbox_cli):
+    runner = FakeRunner()
+    with pytest.raises(FleetError, match="'nope' is not registered in thurbox"):
+        fleet.check_agent("nope", runner)
+
+
+def test_no_agent_means_no_check(monkeypatch):
+    monkeypatch.setattr("vega.fleet.shutil.which", lambda name: None)
+    runner = FakeRunner()
+    assert fleet.check_agent(None, runner) is None
+    assert fleet.check_agent("", runner) is None
+    assert runner.calls == []
+
+
+def test_an_agent_without_thurbox_cli_is_refused_clearly(monkeypatch):
+    monkeypatch.setattr("vega.fleet.shutil.which", lambda name: None)
+    runner = FakeRunner()
+    with pytest.raises(FleetError, match="thurbox-cli is not on PATH"):
+        fleet.check_agent("claude-coder", runner)
+    assert runner.calls == []
+
+
 def test_publish_methods():
     assert fleet.check_publish(None) is None and fleet.check_publish("pr") == "pr"
     with pytest.raises(FleetError):

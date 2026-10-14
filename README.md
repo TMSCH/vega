@@ -44,6 +44,7 @@ Slack ──Socket Mode──▶ Hermes gateway (profile "vega")
                     Vega's model + tools, for this thread only
                          │  vega_topic_add   → fleet queue topic add … --by <asker>
                          │  vega_task_add    → fleet queue add … --origin slack:C…/ts
+                         │                    [--agent <name>, checked with thurbox-cli]
                          │  vega_dispatch    → fleet status --fuel, then
                          │                    fleet queue dispatch --origin slack:C…/ts
                          │  vega_fleet_news  → find --origin, show, progress.jsonl → diff
@@ -267,6 +268,13 @@ real Hermes session store, heartbeat row, restore scan and poll step, and real
 
 Any other table or key is refused at load time.
 
+No agent name lives in Vega or `vega.toml`. `vega_task_add` takes an optional
+`agent` when the operator's own instructions (a skill in the Hermes profile) say
+which thurbox agent fits a request; Vega passes it as `fleet queue add --agent`
+only after `thurbox-cli agent launch-args <name> --json` confirms thurbox has it
+registered. Without one, no `--agent` is passed and fleet's default applies
+(`AGENT=` in its `orchestration/agent.conf`, else thurbox's).
+
 Vega looks for its config in this order: `--config`, `$VEGA_CONFIG`, the Hermes
 profile home (`$HERMES_HOME/vega.toml`), then `~/.hermes/profiles/vega/vega.toml`.
 
@@ -280,9 +288,9 @@ profile home (`$HERMES_HOME/vega.toml`), then `~/.hermes/profiles/vega/vega.toml
   can be refused politely. Vega checks in `pre_gateway_dispatch`, again at
   admission, and inside every tool.
 - **No commands from Slack.** Nothing from Slack reaches a command line except
-  as a validated ref, slug, branch, title or one-line answer, or inside a file
-  fleet reads. Every subprocess runs without a shell, with a timeout and a
-  stripped environment.
+  as a validated ref, slug, branch, title, registered agent name or one-line
+  answer, or inside a file fleet reads. Every subprocess runs without a shell,
+  with a timeout and a stripped environment.
 - **One origin per thread.** A thread can dispatch, read and message only its
   own tasks.
 - **Clean output.** Tool output has the home directory shortened to `~` before

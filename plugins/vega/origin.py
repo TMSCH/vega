@@ -282,14 +282,21 @@ def task_add(
     by: str,
     base: object = None,
     publish: object = None,
+    agent: object = None,
     runner: Runner | None = None,
 ) -> dict:
-    """``fleet queue add`` with ``--origin`` fixed to this thread and no ``--reply``."""
+    """``fleet queue add`` with ``--origin`` fixed to this thread and no ``--reply``.
+
+    ``agent`` names a thurbox agent for the task; without one, no ``--agent`` is
+    passed and fleet's own default applies.
+    """
     topic_slug = fleet.check_slug(topic, "topic")
     task_slug = fleet.check_slug(slug, "task slug")
     name = fleet.check_title(title)
     repo_path = fleet.check_repo(cfg, repo)
     branch_name = fleet.check_branch(branch)
+    method = fleet.check_publish(publish)
+    agent_name = fleet.check_agent(agent, runner)
     brief = write_brief(cfg, topic_slug, task_slug, sections)
     args = [
         "queue",
@@ -309,9 +316,10 @@ def task_add(
     ]
     if base not in (None, ""):
         args += ["--base", fleet.check_branch(base, "base")]
-    method = fleet.check_publish(publish)
     if method:
         args += ["--publish", method]
+    if agent_name:
+        args += ["--agent", agent_name]
     who = clean_name(by)
     if who:
         args += ["--by", who]
