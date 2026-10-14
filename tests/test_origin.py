@@ -195,6 +195,69 @@ def test_task_add_refuses_bad_input_before_running_anything(cfg, fake, repo, tmp
     assert fake.fleet_calls() == []
 
 
+def test_task_add_passes_a_registered_agent(cfg, fake, repo, thurbox_cli):
+    thread = record(cfg)
+    origin.task_add(
+        cfg,
+        thread,
+        topic="t",
+        slug="s",
+        title="T",
+        repo=str(repo),
+        branch="b",
+        sections=SECTIONS,
+        by="A",
+        agent="claude-coder",
+        runner=fake,
+    )
+    assert fake.thurbox_calls() == [["agent", "launch-args", "claude-coder", "--json"]]
+    (argv,) = fake.fleet_calls()
+    assert argv[argv.index("--agent") + 1] == "claude-coder"
+
+
+def test_task_add_without_an_agent_passes_no_flag(cfg, fake, repo):
+    thread = record(cfg)
+    origin.task_add(
+        cfg,
+        thread,
+        topic="t",
+        slug="s",
+        title="T",
+        repo=str(repo),
+        branch="b",
+        sections=SECTIONS,
+        by="A",
+        runner=fake,
+    )
+    (argv,) = fake.fleet_calls()
+    assert "--agent" not in argv
+    assert fake.thurbox_calls() == []
+
+
+def test_task_add_refuses_an_unusable_agent_before_queueing(
+    cfg, fake, repo, thurbox_cli, monkeypatch
+):
+    thread = record(cfg)
+    good = dict(
+        topic="t",
+        slug="s",
+        title="T",
+        repo=str(repo),
+        branch="b",
+        sections=SECTIONS,
+        by="A",
+    )
+    with pytest.raises(FleetError, match="letters, digits"):
+        origin.task_add(cfg, thread, **good, agent="--agent", runner=fake)
+    with pytest.raises(FleetError, match="'ghost' is not registered in thurbox"):
+        origin.task_add(cfg, thread, **good, agent="ghost", runner=fake)
+    monkeypatch.setattr("vega.fleet.shutil.which", lambda name: None)
+    with pytest.raises(FleetError, match="thurbox-cli is not on PATH"):
+        origin.task_add(cfg, thread, **good, agent="claude-coder", runner=fake)
+    assert fake.fleet_calls() == []
+    assert not (cfg.runtime_dir / "briefs").exists()
+
+
 def test_task_add_reports_fleet_refusal(cfg, fake, repo):
     fake.rc["queue add"] = 2
     thread = record(cfg)

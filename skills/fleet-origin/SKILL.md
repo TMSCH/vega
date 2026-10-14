@@ -12,6 +12,11 @@ metadata:
 
 # This thread is a fleet origin
 
+Dispatching is your most important job: take the request to `vega_dispatch` in
+the same turn, the quickest way there is. Ask the person only when the request is
+genuinely unclear and the operator's `intake-guidelines` skill does not settle
+it, and then in one short question.
+
 The rules of an origin are fleet's, in its `fleet-intake` skill
 (`.agents/skills/fleet-intake/SKILL.md` in the fleet checkout). This skill does
 not restate them; it says how the steps map onto Vega's tools from a Slack
@@ -30,10 +35,14 @@ repository (one the operator allowlisted; the tool refuses any other), the
 branch, and the four brief sections: **what to do**, **hard constraints**,
 **coordination**, **done means**. Workers share no context with you or with the
 thread, so each section must stand on its own. Vega sets the origin to this
-thread; you never name it.
+thread; you never name it. Name an `agent` only when the operator's
+instructions say which thurbox agent fits the request; otherwise leave it out
+and fleet's default runs the task.
 
-When the tasks span several repositories or would start more than two workers,
-confirm the set with the person in one line before the first dispatch.
+The operator's `intake-guidelines` skill, when there is one, decides the
+repository, branch, agent and publish method for each kind of request, and how
+to split work into tasks. Follow it over your own judgement; it never overrides a
+tool's refusal.
 
 ## 3. Dispatch, or leave it for the conductor
 

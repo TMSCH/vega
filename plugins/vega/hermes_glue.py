@@ -9,8 +9,11 @@
   records the person's message verbatim in the thread's record (the topic prompt is
   written from it), and lets the model turn run. A heartbeat tick is recognised and not
   recorded as a person's message.
-* The tools are the only ones Vega's Slack toolset carries (``config.yaml``). Each
-  builds a fixed ``fleet`` argv in code; the origin is always this thread's.
+* ``pre_tool_call`` refuses ``skill_manage``. The skills toolset is enabled only so
+  skills reach the model; a Slack message must never get Vega to write or edit one.
+* The tools are the only ones Vega's Slack toolset carries besides the skills reader
+  (``config.yaml``). Each builds a fixed ``fleet`` argv in code; the origin is always
+  this thread's.
 """
 
 from __future__ import annotations
@@ -32,6 +35,8 @@ TOOLSET = "vega"
 REFUSAL_COOLDOWN_SECONDS = 600
 # Hermes renders every heartbeat tick from HEARTBEAT_PROMPT_TEMPLATE (hermes_cli).
 HEARTBEAT_MARK = "[Heartbeat — "
+# Tools of an enabled toolset that Vega's model must never run.
+REFUSED_TOOLS = frozenset({"skill_manage"})
 _last_refusal: dict[str, float] = {}
 # Thread history the Slack adapter fetched, carried from pre_gateway_dispatch (which
 # sees the event) to post_gateway_admission (which only gets the text).
@@ -44,6 +49,7 @@ _session_store: Any = None
 def register(ctx: Any) -> None:
     ctx.register_hook("pre_gateway_dispatch", pre_gateway_dispatch)
     ctx.register_hook("post_gateway_admission", post_gateway_admission)
+    ctx.register_hook("pre_tool_call", pre_tool_call)
     for schema, handler in TOOLS:
         ctx.register_tool(
             name=schema["name"],
@@ -125,6 +131,16 @@ async def post_gateway_admission(
         )
     except Exception:
         logger.exception("vega: could not record the message; the model still answers")
+    return None
+
+
+def pre_tool_call(tool_name: str = "", **_: Any):
+    if tool_name in REFUSED_TOOLS:
+        return {
+            "action": "block",
+            "message": f"{tool_name} is not available to Vega: skills are read-only "
+            "here. Ask the operator to change a skill.",
+        }
     return None
 
 
@@ -335,6 +351,7 @@ def _task_add(cfg: config.VegaConfig, args: dict) -> dict:
         branch=args.get("branch"),
         base=args.get("base"),
         publish=args.get("publish"),
+        agent=args.get("agent"),
         sections={key: args.get(key) for key, _ in origin.BRIEF_SECTIONS},
         by=_asker(),
     )
@@ -461,6 +478,10 @@ TASK_ADD_SCHEMA = {
                 "enum": list(fleet.PUBLISH_METHODS),
                 "description": "Optional: what the task must leave behind; default pr.",
             },
+            "agent": _str(
+                "Optional: the registered thurbox agent to run this task, when the "
+                "operator's instructions name one; omitted means fleet's default."
+            ),
             "what_to_do": _str("Brief section: the goal and the work, from scratch."),
             "hard_constraints": _str("Brief section: what the worker must not do."),
             "coordination": _str("Brief section: other tasks or people it must mind."),
